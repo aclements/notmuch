@@ -1,0 +1,145 @@
+# Boolean operators
+
+x and y
+[lex]    "x" AND "y"
+[parse]  (AND "x" "y")
+[gen]    (x:(pos=1) AND y:(pos=2))
+
+x or y
+[lex]    "x" OR "y"
+[parse]  (OR "x" "y")
+[gen]    (x:(pos=1) OR y:(pos=2))
+
+x xor y
+[lex]    "x" XOR "y"
+[parse]  (XOR "x" "y")
+[gen]    (x:(pos=1) XOR y:(pos=2))
+
+x and y or x and w
+[lex]    "x" AND "y" OR "x" AND "w"
+[parse]  (OR (AND "x" "y") (AND "x" "w"))
+[gen]    ((x:(pos=1) AND y:(pos=2)) OR (x:(pos=3) AND w:(pos=4)))
+
+x and -y
+[lex]    "x" AND HATE "y"
+[parse]  (AND "x" (NOT "y"))
+[gen]    (x:(pos=1) AND_NOT y:(pos=2))
+
+x or not y
+[lex]    "x" OR NOT "y"
+[parse]  (OR "x" (NOT "y"))
+[gen]    (x:(pos=1) OR (<alldocuments> AND_NOT y:(pos=2)))
+
+# The following three are Xapian-incompatible because they're syntax errors.
+x and
+[lex]    "x" AND
+[parse]  "x"
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+and x
+[lex]    AND "x"
+[parse]  "x"
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+and
+[lex]    AND
+[parse]  <nil>
+[gen]    <alldocuments>
+[xapian] error Syntax: <expression> AND <expression>
+
+# Unary NOT
+
+x not y
+[lex]    "x" NOT "y"
+[parse]  (AND "x" (NOT "y"))
+[gen]    (x:(pos=1) AND_NOT y:(pos=2))
+
+x not y or z
+[lex]    "x" NOT "y" OR "z"
+[parse]  (OR (AND "x" (NOT "y")) "z")
+[gen]    ((x:(pos=1) AND_NOT y:(pos=2)) OR z:(pos=3))
+
+x not y and z
+[lex]    "x" NOT "y" AND "z"
+[parse]  (AND (AND "x" (NOT "y")) "z")
+[gen]    ((x:(pos=1) AND_NOT y:(pos=2)) AND z:(pos=3))
+
+not not x
+[lex]    NOT NOT "x"
+[parse]  (NOT (NOT "x"))
+[gen]    (<alldocuments> AND_NOT (<alldocuments> AND_NOT x:(pos=1)))
+[xapian] error Syntax: <expression> NOT <expression>
+
+# Empty subexpressions
+# These are all Xapian-incompatible because they're syntax errors.
+
+x and ()
+[lex]    "x" AND BRA KET
+[parse]  "x"
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+() and x
+[lex]    BRA KET AND "x"
+[parse]  "x"
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+# NULL phrases
+# These are all Xapian-incompatible because they're syntax errors.
+
+and
+[lex]    AND
+[parse]  <nil>
+[gen]    <alldocuments>
+[xapian] error Syntax: <expression> AND <expression>
+
+@
+[lex]    "@"
+[parse]  "@"
+[gen]    <alldocuments>
+[xapian] 
+
+@ AND x
+[lex]    "@" AND "x"
+[parse]  (AND "@" "x")
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+x AND @
+[lex]    "x" AND "@"
+[parse]  (AND "x" "@")
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND <expression>
+
+@ AND NOT x
+[lex]    "@" AND NOT "x"
+[parse]  (AND "@" (NOT "x"))
+[gen]    (<alldocuments> AND_NOT x:(pos=1))
+[xapian] error Syntax: <expression> AND NOT <expression>
+
+x AND NOT @
+[lex]    "x" AND NOT "@"
+[parse]  (AND "x" (NOT "@"))
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> AND NOT <expression>
+
+NOT @
+[lex]    NOT "@"
+[parse]  (NOT "@")
+[gen]    <alldocuments>
+[xapian] error Syntax: <expression> NOT <expression>
+
+@ OR x
+[lex]    "@" OR "x"
+[parse]  (OR "@" "x")
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> OR <expression>
+
+x OR @
+[lex]    "x" OR "@"
+[parse]  (OR "x" "@")
+[gen]    x:(pos=1)
+[xapian] error Syntax: <expression> OR <expression>

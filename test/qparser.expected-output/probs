@@ -1,0 +1,46 @@
+(x OR y) AND z
+[lex]    BRA "x" OR "y" KET AND "z"
+[parse]  (AND (OR "x" "y") "z")
+[gen]    ((x:(pos=1) OR y:(pos=2)) AND z:(pos=3))
+
+# Incompatible; Xapian bails on the syntax error, we forge ahead.
+(x OR y)) AND z
+[lex]    BRA "x" OR "y" KET KET AND "z"
+[parse]  (AND (OR "x" "y") "z")
+[gen]    ((x:(pos=1) OR y:(pos=2)) AND z:(pos=3))
+[xapian] (x:(pos=1) AND or:(pos=2) AND y:(pos=3) AND and:(pos=4) AND z:(pos=5))
+
+# Empty subexpression after prefix
+# Incompatible; Xapian treats as a syntax error.
+prob:() AND x
+[lex]    PREFIX/prob BRA KET AND "x"
+[parse]  "x"
+[gen]    x:(pos=1)
+[xapian] (prob:(pos=1) AND and:(pos=2) AND x:(pos=3))
+
+# Subqueries with same boolean prefix
+lit:x lit:y
+[lex]    PREFIX/lit "x" PREFIX/lit "y"
+[parse]  (FILTER (OR (PREFIX/lit 'x') (PREFIX/lit 'y')))
+[gen]    0 * (Lx OR Ly)
+
+# Combining prob components
+x -y lit:z
+[lex]    "x" HATE "y" PREFIX/lit "z"
+[parse]  (AND (AND "x" (FILTER (PREFIX/lit 'z'))) (NOT "y"))
+[gen]    ((x:(pos=1) FILTER Lz) AND_NOT y:(pos=2))
+
+x lit:z
+[lex]    "x" PREFIX/lit "z"
+[parse]  (AND "x" (FILTER (PREFIX/lit 'z')))
+[gen]    (x:(pos=1) FILTER Lz)
+
+-y lit:z
+[lex]    HATE "y" PREFIX/lit "z"
+[parse]  (AND (FILTER (PREFIX/lit 'z')) (NOT "y"))
+[gen]    (0 * Lz AND_NOT y:(pos=1))
+
+x -y
+[lex]    "x" HATE "y"
+[parse]  (AND "x" (NOT "y"))
+[gen]    (x:(pos=1) AND_NOT y:(pos=2))

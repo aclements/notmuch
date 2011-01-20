@@ -1,0 +1,136 @@
+# Term lexing
+
+x y z
+[lex]    "x" "y" "z"
+[parse]  (AND (AND "x" "y") "z")
+[gen]    (x:(pos=1) AND y:(pos=2) AND z:(pos=3))
+
+x"y z"w
+[lex]    "x" "y z" "w"
+[parse]  (AND (AND "x" "y z") "w")
+[gen]    (x:(pos=1) AND (y:(pos=2) PHRASE 2 z:(pos=3)) AND w:(pos=4))
+
+x(y z)w
+[lex]    "x" BRA "y" "z" KET "w"
+[parse]  (AND (AND "x" (AND "y" "z")) "w")
+[gen]    (x:(pos=1) AND y:(pos=2) AND z:(pos=3) AND w:(pos=4))
+
+# The first query below is Xapian-compatible, while the second one
+# isn't.  We use much simpler term lexing rules than Xapian.
+x/y
+[lex]    "x/y"
+[parse]  "x/y"
+[gen]    (x:(pos=1) PHRASE 2 y:(pos=2))
+
+x!y
+[lex]    "x!y"
+[parse]  "x!y"
+[gen]    (x:(pos=1) PHRASE 2 y:(pos=2))
+[xapian] (x:(pos=1) AND y:(pos=2))
+
+# Incompatible; our simpler term parsing sees ! as a term
+x -! y
+[lex]    "x" HATE "!" "y"
+[parse]  (AND (AND "x" "y") (NOT "!"))
+[gen]    (x:(pos=1) AND y:(pos=2))
+[xapian] (x:(pos=1) AND_NOT y:(pos=2))
+
+# Term parsing
+
+x -
+[lex]    "x" HATE
+[parse]  "x"
+[gen]    x:(pos=1)
+
+x +
+[lex]    "x" LOVE
+[parse]  "x"
+[gen]    x:(pos=1)
+
+(x)
+[lex]    BRA "x" KET
+[parse]  "x"
+[gen]    x:(pos=1)
+
+# Prefixed operators get demoted to terms
+prob:AND
+[lex]    PREFIX/prob AND
+[parse]  (PREFIX/prob "AND")
+[gen]    Pand:(pos=1)
+
+# The first query below is Xapian-compatible, but the second isn't
+# because Xapian handles hate very differently from love.
++AND
+[lex]    LOVE AND
+[parse]  "AND"
+[gen]    and:(pos=1)
+
+-AND
+[lex]    HATE AND
+[parse]  (NOT "AND")
+[gen]    (<alldocuments> AND_NOT and:(pos=1))
+[xapian] and:(pos=1)
+
+# Incompatible; Xapian sees this as prob:"prob:x"
+prob:prob:x
+[lex]    PREFIX/prob PREFIX/prob "x"
+[parse]  (PREFIX/prob "x")
+[gen]    Px:(pos=1)
+[xapian] (Pprob:(pos=1) PHRASE 2 Px:(pos=2))
+
+# The rest are Xapian-incompatible because they're all considered
+# syntax errors
+(
+[lex]    BRA
+[parse]  <nil>
+[gen]    <alldocuments>
+[xapian] 
+
+()
+[lex]    BRA KET
+[parse]  <nil>
+[gen]    <alldocuments>
+[xapian] 
+
+)
+[lex]    KET
+[parse]  <nil>
+[gen]    <alldocuments>
+[xapian] 
+
+(x)) OR y
+[lex]    BRA "x" KET KET OR "y"
+[parse]  (OR "x" "y")
+[gen]    (x:(pos=1) OR y:(pos=2))
+[xapian] (x:(pos=1) AND or:(pos=2) AND y:(pos=3))
+
+# This one's only Xapian-compatible by chance.
+(x))
+[lex]    BRA "x" KET KET
+[parse]  "x"
+[gen]    x:(pos=1)
+
+# Term generating
+
+c++ x
+[lex]    "c++" "x"
+[parse]  (AND "c++" "x")
+[gen]    (c++:(pos=1) AND x:(pos=2))
+
+# Incompatible; + is not a "phrase generator" in Xapian.
+c+x
+[lex]    "c+x"
+[parse]  "c+x"
+[gen]    (c:(pos=1) PHRASE 2 x:(pos=2))
+[xapian] (c:(pos=1) AND x:(pos=2))
+
+c-x
+[lex]    "c-x"
+[parse]  "c-x"
+[gen]    (c:(pos=1) PHRASE 2 x:(pos=2))
+
+w "x y z"
+[lex]    "w" "x y z"
+[parse]  (AND "w" "x y z")
+[gen]    (w:(pos=1) AND (x:(pos=2) PHRASE 3 y:(pos=3) PHRASE 3 z:(pos=4)))
+

@@ -1,0 +1,29 @@
+x "y z" w
+[lex]    "x" "y z" "w"
+[parse]  (AND (AND "x" "y z") "w")
+[gen]    (x:(pos=1) AND (y:(pos=2) PHRASE 2 z:(pos=3)) AND w:(pos=4))
+
+x "y z
+[lex]    "x" "y z"
+[parse]  (AND "x" "y z")
+[gen]    (x:(pos=1) AND (y:(pos=2) PHRASE 2 z:(pos=3)))
+
+x "" y
+[lex]    "x" "" "y"
+[parse]  (AND (AND "x" "") "y")
+[gen]    (x:(pos=1) AND y:(pos=2))
+
+x "  " y
+[lex]    "x" "  " "y"
+[parse]  (AND (AND "x" "  ") "y")
+[gen]    (x:(pos=1) AND y:(pos=2))
+
+lit:" x y"
+[lex]    PREFIX/lit " x y"
+[parse]  (FILTER (PREFIX/lit ' x y'))
+[gen]    0 * L x y
+
+lit:"x""y"
+[lex]    PREFIX/lit "x"y"
+[parse]  (FILTER (PREFIX/lit 'x"y'))
+[gen]    0 * Lx"y

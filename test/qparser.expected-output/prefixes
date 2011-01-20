@@ -1,0 +1,33 @@
+prob:x lit:y none:z
+[lex]    PREFIX/prob "x" PREFIX/lit "y" "none:z"
+[parse]  (AND (AND (PREFIX/prob "x") "none:z") (FILTER (PREFIX/lit 'y')))
+[gen]    ((Px:(pos=1) AND (none:(pos=2) PHRASE 2 z:(pos=3))) FILTER Ly)
+
+prob:"x y" lit:"x y" none:"x y"
+[lex]    PREFIX/prob "x y" PREFIX/lit "x y" "none:" "x y"
+[parse]  (AND (AND (AND (PREFIX/prob "x y") "none:") "x y") (FILTER (PREFIX/lit 'x y')))
+[gen]    (((Px:(pos=1) PHRASE 2 Py:(pos=2)) AND none:(pos=3) AND (x:(pos=4) PHRASE 2 y:(pos=5))) FILTER Lx y)
+
+# Incompatible; Xapian bails and re-parses everything with no flags
+prob:(x y) lit:(x y) none:(x y)
+[lex]    PREFIX/prob BRA "x" "y" KET PREFIX/lit "(x" "y" KET "none:" BRA "x" "y" KET
+[parse]  (AND (AND (AND (AND (PREFIX/prob (AND "x" "y")) "y") "none:") (AND "x" "y")) (FILTER (PREFIX/lit '(x')))
+[gen]    ((Px:(pos=1) AND Py:(pos=2) AND y:(pos=3) AND none:(pos=4) AND x:(pos=5) AND y:(pos=6)) FILTER L(x)
+[xapian] ((prob:(pos=1) AND x:(pos=2) AND y:(pos=3) AND y:(pos=4) AND none:(pos=5) AND x:(pos=6) AND y:(pos=7)) FILTER L(x)
+
+# This is Xapian-compatible, but seems ridiculous
+lit:(x)
+[lex]    PREFIX/lit "(x" KET
+[parse]  (FILTER (PREFIX/lit '(x'))
+[gen]    0 * L(x
+
+# Test characters accepted after the prefix colon
+lit:#
+[lex]    PREFIX/lit "#"
+[parse]  (FILTER (PREFIX/lit '#'))
+[gen]    0 * L#
+
+prob:#
+[lex]    "prob:#"
+[parse]  "prob:#"
+[gen]    prob:(pos=1)
