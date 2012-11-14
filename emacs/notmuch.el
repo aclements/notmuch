@@ -62,7 +62,7 @@
 (require 'notmuch-parser)
 
 (defcustom notmuch-search-result-format
-  `(("date" . "%12s ")
+  `(("date" . "%6s ")
     ("count" . "%-7s ")
     ("authors" . "%-20s ")
     ("subject" . "%s ")
@@ -733,10 +733,29 @@ non-authors is found, assume that all of the authors match."
 	  (overlay-put overlay 'isearch-open-invisible #'delete-overlay)))
       (insert padding))))
 
+;; XXX Make this function user-controllable, provide
+;; date_relative-like formatting and 24 hour version of this.
+;; XXX Make time formatting in show user-controllable
+;; XXX Update displayed times when appropriate
+(defun notmuch-search-format-time (ts)
+  (let* ((time-value (seconds-to-time ts))
+	 (then (decode-time time-value))
+	 (now (decode-time)))
+    (cond ((/= (sixth now) (sixth then)) ;; Years differ
+	   (format "%d" (sixth then)))
+	  ((or (/= (fifth now) (fifth then)) ;; Months differ
+	       (/= (fourth now) (fourth then))) ;; Days differ
+	   (format-time-string "%b %e" time-value))
+	  (t
+	   (format "%s%c" (format-time-string "%l:%M" time-value)
+		   (if (< (third then) 12) ?a ?p))))))
+
 (defun notmuch-search-insert-field (field format-string result)
   (cond
    ((string-equal field "date")
-    (insert (propertize (format format-string (plist-get result :date_relative))
+    (insert (propertize (format format-string
+				(notmuch-search-format-time
+				 (plist-get result :timestamp)))
 			'face 'notmuch-search-date)))
    ((string-equal field "count")
     (insert (propertize (format format-string
