@@ -37,12 +37,25 @@ import contextlib
 # it).
 
 class PExpr:
+    """Base class for PEG parsing expressions."""
     NONCE = 0
 
-    def __init__(self, gen):
-        self.gen = gen
+    def __init__(self, *productions):
+        self.productions = productions
         self.fname = '_parse_n%d' % PExpr.NONCE
         PExpr.NONCE += 1
+
+    def gen_c(self, g):
+        raise NotImplementedError('gen_c is abstract')
+
+class AutoSeq(PExpr):
+    """Parsing expressions that implicitly Seq their arguments."""
+    def __init__(self, *productions):
+        if len(productions) == 1:
+            super().__init__(*productions)
+        else:
+            super().__init__(Seq(*productions))
+        self._production = self.productions[0]
 
 class Grammar:
     def __init__(self, user_state_type):
@@ -58,7 +71,20 @@ class Grammar:
         self.__rules.update(rules)
         self.__queue.extend(rules.values())
         while self.__qpos < len(self.__queue):
-            self.__queue[self.__qpos].gen(self)
+            pexpr = self.__queue[self.__qpos]
+            # We could make these methods of the parser state, which
+            # would be nice and OO, but by declaring all parser
+            # functions as static, the compiler is able to inline the
+            # vast majority of these functions and doesn't have to
+            # emit non-inlined versions at all.
+            decl = ('static bool\n'
+                    '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' % \
+                    (pexpr.fname))
+            with self.func(decl):
+                pexpr.gen_c(self)
+                # XXX Could put result in a variable and write generic
+                # restore code here (if save).  But that does the
+                # wrong thing for Lookahead.
             self.__qpos += 1
 
     def write_to(self, fp):
@@ -101,6 +127,7 @@ struct _parse_state {
 
     @contextlib.contextmanager
     def func(self, decl):
+        # XXX Now private?
         self.__decls.append(decl + ';')
         self(decl + ' {')
         self.__indent += 1
@@ -108,28 +135,6 @@ struct _parse_state {
         self.__indent -= 1
         self('}')
         self('')
-
-    @contextlib.contextmanager
-    def parser_func(self, save=False, end_fail=False):
-        pexpr = self.__queue[self.__qpos]
-        # We could make these methods of the parser state, which would
-        # be nice and OO, but by declaring all parser functions as
-        # static, the compiler is able to inline the vast majority of
-        # these functions and doesn't have to emit non-inlined
-        # versions at all.
-        decl = ('static bool\n'
-                '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' % \
-                (pexpr.fname))
-        with self.func(decl):
-            if end_fail:
-                self('if (pos == Utf8Iterator ()) return false;')
-            if save:
-                self('Utf8Iterator saved_pos = pos;')
-                self('%s::save saved_user (&s->user);' % self.__user_state_type)
-            yield
-        # XXX Could put result in a variable and write generic restore
-        # code here (if save).  But that does the wrong thing for
-        # Lookahead.
 
     def resolve(self, pexpr):
         if not isinstance(pexpr, PExpr):
@@ -144,6 +149,13 @@ struct _parse_state {
     def call(self, pexpr):
         return '%s (s, pos)' % self.resolve(pexpr).fname
 
+    def fail_if_end(self):
+        self('if (pos == Utf8Iterator ()) return false;')
+
+    def save(self):
+        self('Utf8Iterator saved_pos = pos;')
+        self('%s::save saved_user (&s->user);' % self.__user_state_type)
+
     def restore(self):
         self('pos = saved_pos;')
         self('saved_user.restore (&s->user);')
@@ -154,95 +166,84 @@ def cstring(text):
                   text.encode('utf8'))
     return '"' + text.decode('ascii') + '"'
 
-def Lit(text):
+class Lit(PExpr):
     """Parse 'text' case-insensitively."""
-    def gen(w):
-        with w.parser_func(end_fail=True):
-            if len(text) == 1:
-                w('if (*pos != %d) return false;' % ord(text))
-            else:
-                w('if (strncasecmp (pos.raw(), %s, %d) != 0) return false;' %
-                  (cstring(text), len(text.encode('utf8'))))
-            w('%s return true;' % ('++pos; ' * len(text)))
-    return PExpr(gen)
+    def __init__(self, text):
+        super().__init__()
+        self.__text = text
+    def gen_c(self, g):
+        g.fail_if_end()
+        if len(self.__text) == 1:
+            g('if (*pos != %d) return false;' % ord(self.__text))
+        else:
+            g('if (strncasecmp (pos.raw(), %s, %d) != 0) return false;' %
+              (cstring(self.__text), len(self.__text.encode('utf8'))))
+        g('%sreturn true;' % ('++pos; ' * len(self.__text)))
 
-def CharClass(expr):
+class CharClass(PExpr):
     """Parse a Unicode code point satisfying the C expression expr.
 
     In expr, the variable 'c' identifies the code point.
     """
-    def gen(w):
-        with w.parser_func(end_fail=True):
-            w('unsigned c = *pos;')
-            w('if (%s) {++pos; return true;} else return false;' % expr)
-    return PExpr(gen)
+    def __init__(self, expr):
+        super().__init__()
+        self.__expr = expr
+    def gen_c(self, g):
+        g.fail_if_end()
+        g('unsigned c = *pos;')
+        g('if (%s) {++pos; return true;} else return false;' % self.__expr)
 
-def Seq(*productions):
+class Seq(PExpr):
     """Parse a sequence of productions."""
-    if len(productions) == 1:
-        return productions[0]
-    def gen(w):
-        with w.parser_func(save=True):
-            w('if (%s) return true;' % ' && '.join(map(w.call, productions)))
-            w.restore()
-            w('return false;')
-    return PExpr(gen)
+    def gen_c(self, g):
+        g.save()
+        g('if (%s) return true;' % ' && '.join(map(g.call, self.productions)))
+        g.restore()
+        g('return false;')
 
-def Alt(*productions):
+class Alt(PExpr):
     """Parse one of productions, trying each in order."""
-    def gen(w):
-        with w.parser_func():
-            w('return %s;' % ' || '.join(map(w.call, productions)))
-    return PExpr(gen)
+    def gen_c(self, g):
+        g('return %s;' % ' || '.join(map(g.call, self.productions)))
 
-def ZeroPlus(*productions):
+class ZeroPlus(AutoSeq):
     """Parse zero or more occurrences of productions."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func():
-            w('while (%s); return true;' % w.call(production))
-    return PExpr(gen)
+    def gen_c(self, g):
+        g('while (%s); return true;' % g.call(self._production))
 
 def OnePlus(*productions):
-    """Equivalent to Seq(*productions, ZeroPlus(*productions))."""
+    """Parse one or more occurrences of productions."""
     return Seq(*(productions + (ZeroPlus(*productions),)))
 
-def Optional(*productions):
+class Optional(AutoSeq):
     """Parse zero or one occurrences of productions."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func():
-            w('%s; return true;' % w.call(production))
-    return PExpr(gen)
+    def gen_c(self, g):
+        g('%s; return true;' % g.call(self._production))
 
-def Lookahead(*productions):
-    """Succeeds if Seq(*productions) succeeds, but consume nothing."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func(save=True):
-            w('if (!%s) return false;' % w.call(production))
-            w.restore()
-            w('return true;')
-    return PExpr(gen)
+class Lookahead(AutoSeq):
+    """Succeeds if productions succeed, but consumes nothing."""
+    def gen_c(self, g):
+        g.save()
+        g('if (!%s) return false;' % g.call(self._production))
+        g.restore()
+        g('return true;')
 
-def NotLookahead(*productions):
-    """Succeeds if Seq(*productions) fails, but consume nothing."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func(save=True):
-            w('if (!%s) return true;' % w.call(production))
-            w.restore()
-            w('return false;')
-    return PExpr(gen)
+class NotLookahead(AutoSeq):
+    """Succeeds if productions fail, but consumes nothing."""
+    def gen_c(self, g):
+        g.save()
+        g('if (!%s) return true;' % g.call(self._production))
+        g.restore()
+        g('return false;')
 
-def End():
+class End(PExpr):
     """Succeeds if there is no more input.  Consumes nothing."""
-    def gen(w):
-        with w.parser_func():
-            w('return (pos == Utf8Iterator());')
-    return PExpr(gen)
+    def __init__(self):
+        super().__init__()
+    def gen_c(self, g):
+        g('return (pos == Utf8Iterator());')
 
-def Node(typ, *productions, promote_unit=False):
+class Node(AutoSeq):
     """Like Seq, but creates a new Node object.
 
     The Node object will have the type given by 'typ'.  Descendant
@@ -251,39 +252,37 @@ def Node(typ, *productions, promote_unit=False):
     If promote_unit is True, then if the node has only a single child,
     return that child instead of the new node.
     """
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func():
-            w('_notmuch_node_t *parent = s->user.node,')
-            w('    *node = _notmuch_qparser_node_create (parent, %s);' % typ)
-            # XXX Handle allocation failure
-            w('s->user.node = node;')
-            w('bool result = %s;' % w.call(production))
-            w('s->user.node = parent;')
-            w('if (! result) {')
-            w('    talloc_free (node);')
-            if promote_unit:
-                w('} else if (node->nchild == 1) {')
-                w('    _notmuch_qparser_node_add_child (parent, node->child[0]);')
-                w('    talloc_free (node);')
-            w('} else {')
-            w('    _notmuch_qparser_node_add_child (parent, node);')
-            # XXX Handle add failure
-            # XXX Need root node or something
-            w('}')
-            w('return result;')
-    return PExpr(gen)
+    def __init__(self, typ, *productions, promote_unit=False):
+        super().__init__(*productions)
+        self.__typ, self.__promote_unit = typ, promote_unit
+    def gen_c(self, g):
+        g('_notmuch_node_t *parent = s->user.node,')
+        g('    *node = _notmuch_qparser_node_create (parent, %s);' % self.__typ)
+        # XXX Handle allocation failure
+        g('s->user.node = node;')
+        g('bool result = %s;' % g.call(self._production))
+        g('s->user.node = parent;')
+        g('if (! result) {')
+        g('    talloc_free (node);')
+        if self.__promote_unit:
+            g('} else if (node->nchild == 1) {')
+            g('    talloc_steal (parent, node->child[0]);')
+            g('    _notmuch_qparser_node_add_child (parent, node->child[0]);')
+            g('    talloc_free (node);')
+        g('} else {')
+        g('    _notmuch_qparser_node_add_child (parent, node);')
+        # XXX Handle add failure
+        # XXX Need root node or something
+        g('}')
+        g('return result;')
 
-def Text(*productions):
+class Text(AutoSeq):
     """Parse production and set the text of the current Node to its match."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func():
-            w('const char *start = pos.raw();')
-            w('if (! %s) return false;' % w.call(production))
-            w('s->user.node->text = talloc_strndup (s->user.node, start, pos.raw () - start);')
-            w('return true;')
-    return PExpr(gen)
+    def gen_c(self, g):
+        g('const char *start = pos.raw();')
+        g('if (! %s) return false;' % g.call(self._production))
+        g('s->user.node->text = talloc_strndup (s->user.node, start, pos.raw () - start);')
+        g('return true;')
 
 def KW(text):
     return Seq(Lit(text), '__')
