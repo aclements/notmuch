@@ -39,21 +39,24 @@ import contextlib
 class PExpr:
     NONCE = 0
 
-    def __init__(self, gen, typ):
-        self.gen, self.typ = gen, typ
+    def __init__(self, gen):
+        self.gen = gen
         self.fname = '_parse_n%d' % PExpr.NONCE
         PExpr.NONCE += 1
 
-class Writer:
-    def __init__(self, grammar, initial):
-        self.__grammar = grammar
+class Grammar:
+    def __init__(self, user_state_type):
+        self.__user_state_type = user_state_type
+        self.__rules = {}
         self.__decls = []
         self.__code = []
         self.__indent = 0
         self.__queue = []
-
-        self.resolve(initial)
         self.__qpos = 0
+
+    def rules(self, **rules):
+        self.__rules.update(rules)
+        self.__queue.extend(rules.values())
         while self.__qpos < len(self.__queue):
             self.__queue[self.__qpos].gen(self)
             self.__qpos += 1
@@ -66,33 +69,35 @@ class Writer:
         fp.write('using Xapian::Utf8Iterator;\n')
         # XXX
         fp.write('''typedef struct _notmuch_node {
-\tconst char *text;
-\tsize_t nchild;
-\tstruct _notmuch_node **child;
+    const char *text;
+    size_t nchild;
+    struct _notmuch_node **child;
 } _notmuch_node_t;
-        enum _notmuch_node_type {NODE_AND, NODE_OR, NODE_NOT, NODE_COMPOUND, NODE_PREFIX, NODE_TERMS};
+enum _notmuch_node_type {NODE_AND, NODE_OR, NODE_NOT, NODE_COMPOUND, NODE_PREFIX, NODE_TERMS};
 _notmuch_node_t* _notmuch_qparser_node_create (const void *ctx, _notmuch_node_type type);
 void _notmuch_qparser_node_add_child (_notmuch_node_t*, _notmuch_node_t*);
 #define unused(x) x __attribute__ ((unused))
 
-struct _parse_action {
-\tstruct _parse_action *next;
-\tsize_t nchild;
-\tXXX (*action)(XXX);
+struct _user_state {
+    _notmuch_node_t *node;
+    struct save {
+        size_t nchild;
+        save (const _user_state *u) : nchild (u->node ? u->node->nchild : 0) {}
+        void restore (_user_state *u) {
+            if (u->node)
+                u->node->nchild = nchild;
+            // XXX Free dangling children
+        }
+    };
 };
 
 struct _parse_state {
-	/* Pre-order traversal of the action tree. */
-	struct _parse_action *action_head, **action_ptail;
-	/* The action currently being built. */
-	struct _parse_action *action_cur;
-	/* Action allocation pool. */
-	struct *action_pool;
+    %s user;                /* User parse state */
 };
-''')
+''' % self.__user_state_type)
 
         fp.write('\n'.join(self.__decls) + '\n\n')
-        fp.write('\n'.join(self.__code) + '\n')
+        fp.write('\n'.join(self.__code).replace(' '*8, '\t') + '\n')
 
     @contextlib.contextmanager
     def func(self, decl):
@@ -107,14 +112,20 @@ struct _parse_state {
     @contextlib.contextmanager
     def parser_func(self, save=False, end_fail=False):
         pexpr = self.__queue[self.__qpos]
-        decl = 'static %s\n%s (struct _parse_state *s, Utf8Iterator &pos)' % \
-               (self.result_type(pexpr), pexpr.fname)
+        # We could make these methods of the parser state, which would
+        # be nice and OO, but by declaring all parser functions as
+        # static, the compiler is able to inline the vast majority of
+        # these functions and doesn't have to emit non-inlined
+        # versions at all.
+        decl = ('static bool\n'
+                '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' % \
+                (pexpr.fname))
         with self.func(decl):
             if end_fail:
-                self('if (pos == Utf8Iterator()) return 0;')
+                self('if (pos == Utf8Iterator ()) return false;')
             if save:
                 self('Utf8Iterator saved_pos = pos;')
-                self('struct _parse_action **saved_tail = s->action_ptail;')
+                self('%s::save saved_user (&s->user);' % self.__user_state_type)
             yield
         # XXX Could put result in a variable and write generic restore
         # code here (if save).  But that does the wrong thing for
@@ -122,30 +133,20 @@ struct _parse_state {
 
     def resolve(self, pexpr):
         if not isinstance(pexpr, PExpr):
-            pexpr = getattr(self.__grammar, pexpr)
+            pexpr = self.__rules[pexpr]
         if pexpr not in self.__queue:
             self.__queue.append(pexpr)
         return pexpr
 
-    def result_type(self, pexpr):
-        typ = self.resolve(pexpr).typ
-        if callable(typ): typ = typ(self)
-        return typ
-
     def __call__(self, text):
-        self.__code.append('\t' * self.__indent + text)
+        self.__code.append('    ' * self.__indent + text)
 
     def call(self, pexpr):
-        return '%s (ctx, pos, node)' % self.resolve(pexpr).fname
+        return '%s (s, pos)' % self.resolve(pexpr).fname
 
     def restore(self):
         self('pos = saved_pos;')
-        # Move any actions that were added to the action tree to the
-        # action pool to be reused later.
-        self('*s->action_ptail = s->action_pool;')
-        self('s->action_pool = *saved_ptail;')
-        self('*saved_ptail = NULL;')
-        self('s->action_ptail = saved_ptail;')
+        self('saved_user.restore (&s->user);')
 
 def cstring(text):
     text = re.sub(b'[\x00-\x1f"\\\\\x7f-\xff]',
@@ -154,7 +155,7 @@ def cstring(text):
     return '"' + text.decode('ascii') + '"'
 
 def Lit(text):
-    """Parse 'text' case-insensitively.  Evaluates to nothing."""
+    """Parse 'text' case-insensitively."""
     def gen(w):
         with w.parser_func(end_fail=True):
             if len(text) == 1:
@@ -163,7 +164,7 @@ def Lit(text):
                 w('if (strncasecmp (pos.raw(), %s, %d) != 0) return false;' %
                   (cstring(text), len(text.encode('utf8'))))
             w('%s return true;' % ('++pos; ' * len(text)))
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def CharClass(expr):
     """Parse a Unicode code point satisfying the C expression expr.
@@ -174,54 +175,45 @@ def CharClass(expr):
         with w.parser_func(end_fail=True):
             w('unsigned c = *pos;')
             w('if (%s) {++pos; return true;} else return false;' % expr)
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
-def Seq(*productions, n=-1):
-    """Parse a sequence of productions.  Evaluates to the Nth production."""
+def Seq(*productions):
+    """Parse a sequence of productions."""
     if len(productions) == 1:
-        return productions[n]
+        return productions[0]
     def gen(w):
         with w.parser_func(save=True):
-            w('%s result;' % w.result_type(productions[n]))
-            exprs = list(map(w.call, productions))
-            exprs = '(result = %s)' % exprs[n]
-            w('if (%s) return result;' % ' && '.join(map(w.call, productions)))
+            w('if (%s) return true;' % ' && '.join(map(w.call, productions)))
             w.restore()
-            w('return 0;')
-    return PExpr(gen, lambda w: w.result_type(productions[n]))
+            w('return false;')
+    return PExpr(gen)
 
 def Alt(*productions):
-    """Parse one of productions, trying each in order.
-
-    Evaluates to the value of the successful production.
-    """
+    """Parse one of productions, trying each in order."""
     def gen(w):
         with w.parser_func():
-            w('%s result;' % w.result_type(productions[0]))
-            for p in productions[:-1]:
-                w('if ((result = %s)) return result;' % w.call(p))
-            w('return %s;' % w.call(productions[-1]))
-    return PExpr(gen, lambda w: w.result_type(productions[0]))
+            w('return %s;' % ' || '.join(map(w.call, productions)))
+    return PExpr(gen)
 
 def ZeroPlus(*productions):
-    """Parse zero or more occurrences of productions.  Evaluates to nothing."""
+    """Parse zero or more occurrences of productions."""
     production = Seq(*productions)
     def gen(w):
         with w.parser_func():
             w('while (%s); return true;' % w.call(production))
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def OnePlus(*productions):
     """Equivalent to Seq(*productions, ZeroPlus(*productions))."""
     return Seq(*(productions + (ZeroPlus(*productions),)))
 
 def Optional(*productions):
-    """Parse zero or one occurrences of productions.  Evaluates to nothing."""
+    """Parse zero or one occurrences of productions."""
     production = Seq(*productions)
     def gen(w):
         with w.parser_func():
             w('%s; return true;' % w.call(production))
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def Lookahead(*productions):
     """Succeeds if Seq(*productions) succeeds, but consume nothing."""
@@ -231,7 +223,7 @@ def Lookahead(*productions):
             w('if (!%s) return false;' % w.call(production))
             w.restore()
             w('return true;')
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def NotLookahead(*productions):
     """Succeeds if Seq(*productions) fails, but consume nothing."""
@@ -241,100 +233,46 @@ def NotLookahead(*productions):
             w('if (!%s) return true;' % w.call(production))
             w.restore()
             w('return false;')
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def End():
-    """Succeed if there is no more input.  Consumes nothing."""
+    """Succeeds if there is no more input.  Consumes nothing."""
     def gen(w):
         with w.parser_func():
             w('return (pos == Utf8Iterator());')
-    return PExpr(gen, 'bool')
-
-def Action(*productions, before=None, after=None):
-    production = Seq(*productions)
-    def gen(w):
-        # Declare action function
-        action_fname = production.fname + '_action'
-        with w.func('static XXX\n%s (XXX)' % action_fname):
-            if before:
-                w(before)
-            w('struct _parse_action *my_action = s->action_head;')
-            w('for (size_t i = 0; i < my_action->nchild; ++i) {')
-            w('	s->action_head = s->action_head->next;')
-            w(' s->action_head->action(XXX);')
-            w('}')
-            if after:
-                w(after)
-        with w.parser_func(save=True):
-            # Allocate and link in the action
-            w('struct _parse_action *action = s->action_pool;')
-            w('if (action) {')
-            w('	s->action_pool = action->next;')
-            w('} else {')
-            w('	action = talloc (s, struct _parse_action);')
-            # XXX Handle allocation failure
-            w('}')
-            w('*s->action_ptail = action;')
-            w('s->action_ptail = &action->next;')
-            w('action->next = NULL;')
-            w('action->nchild = 0;')
-            w('action->action = %s;' % action_fname)
-
-            # Update parser state
-            # XXX Need a root action
-            w('struct _parse_action *parent = s->action_cur;')
-            w('++parent->nchild;')
-            w('s->action_cur = action;')
-
-            # Parse the child
-            w('bool result = %s;' % w.call(production))
-
-            # Unwind
-            w('s->action_cur = parent;')
-            w('if (result) return true;')
-            w.restore()
-            w('return false;')
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def Node(typ, *productions, promote_unit=False):
-    """Like Seq, but evaluates to a new Node object.
+    """Like Seq, but creates a new Node object.
 
-    The Node object will have the type given by 'typ' and its children
-    will be the productions marked with Child under the Node production.
+    The Node object will have the type given by 'typ'.  Descendant
+    Nodes in the abstract parse tree will be added as children.
 
     If promote_unit is True, then if the node has only a single child,
     return that child instead of the new node.
     """
-    # XXX It would be nice if the state required for this weren't so
-    # baked in to the core parser generator.  The state could be
-    # generalized by subclassing the general parser state and here we
-    # could save and restore the current node (keeping it in the state
-    # may be more efficient than passing it to every function, though
-    # if the compiler's smart, it'll just keep it in the right
-    # register.)  Alternatively, the actions could be a second pass,
-    # which would also have the advantage of never backtracking.
     production = Seq(*productions)
     def gen(w):
         with w.parser_func():
-            w('node = _notmuch_qparser_node_create (ctx, %s);' % typ)
-            w('if (%s) {' % w.call(production))
+            w('_notmuch_node_t *parent = s->user.node,')
+            w('    *node = _notmuch_qparser_node_create (parent, %s);' % typ)
+            # XXX Handle allocation failure
+            w('s->user.node = node;')
+            w('bool result = %s;' % w.call(production))
+            w('s->user.node = parent;')
+            w('if (! result) {')
+            w('    talloc_free (node);')
             if promote_unit:
-                w('\tif (node->nchild == 1) return node->child[0];')
-            w('\treturn node;')
+                w('} else if (node->nchild == 1) {')
+                w('    _notmuch_qparser_node_add_child (parent, node->child[0]);')
+                w('    talloc_free (node);')
+            w('} else {')
+            w('    _notmuch_qparser_node_add_child (parent, node);')
+            # XXX Handle add failure
+            # XXX Need root node or something
             w('}')
-            w('talloc_free (node);')
-            w('return 0;')
-    return PExpr(gen, '_notmuch_node_t *')
-
-def Child(*productions):
-    """Parse production and add its result to the current Node."""
-    production = Seq(*productions)
-    def gen(w):
-        with w.parser_func():
-            w('_notmuch_node_t *val = %s;' % w.call(production))
-            w('if (val) _notmuch_qparser_node_add_child (node, val);')
-            w('return !! val;')
-    return PExpr(gen, 'bool')
+            w('return result;')
+    return PExpr(gen)
 
 def Text(*productions):
     """Parse production and set the text of the current Node to its match."""
@@ -343,24 +281,23 @@ def Text(*productions):
         with w.parser_func():
             w('const char *start = pos.raw();')
             w('if (! %s) return false;' % w.call(production))
-            w('node->text = talloc_strndup (node, start, pos.raw () - start);')
+            w('s->user.node->text = talloc_strndup (s->user.node, start, pos.raw () - start);')
             w('return true;')
-    return PExpr(gen, 'bool')
+    return PExpr(gen)
 
 def KW(text):
     return Seq(Lit(text), '__')
 
-class Grammar:
-    root      = Seq('_', 'andExpr')
+g = Grammar('_user_state')
+g.rules(
+    root      = Seq('_', 'andExpr'),
 
-    andExpr   = Node('NODE_AND',
-                     Child('orExpr'), ZeroPlus(KW('and'), Child('orExpr')),
-                     promote_unit=True)
-    orExpr    = Node('NODE_OR',
-                     Child('unaryExpr'), ZeroPlus(KW('or'), Child('unaryExpr')),
-                     promote_unit=True)
+    andExpr   = Node('NODE_AND', 'orExpr', ZeroPlus(KW('and'), 'orExpr'),
+                     promote_unit=True),
+    orExpr    = Node('NODE_OR', 'unaryExpr', ZeroPlus(KW('or'), 'unaryExpr'),
+                     promote_unit=True),
     unaryExpr = Alt(Node('NODE_NOT', KW('not'), '__', 'unaryExpr'),
-                    'compound')
+                    'compound'),
 
     # A compound is a sequence of possibly-loved/hated
     # possibly-prefixed terms and subqueries.  We stop consuming if we
@@ -371,7 +308,7 @@ class Grammar:
     # XXX Peephole optimization of removing COMPOUND for HATE-only terms
     compound  = Node('NODE_COMPOUND',
                      ZeroPlus(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
-                              Child('loveHate')))
+                              'loveHate')),
     # A love prefix has no effect, since the default compound operator
     # is AND anyway.  Hates are like NOTs, just with lower precedence.
     #
@@ -385,10 +322,10 @@ class Grammar:
     #
     # XXX In the hand-parser, we ignore if followed by a space or
     # another + or -, but I'm not sure why.
-    loveHate  = Alt(Node('NODE_NOT', Lit('-'), Child('frag')),
-                    Seq(Optional(Lit('+')), 'frag'))
-    frag      = Alt(Node('NODE_PREFIX', 'prefix', Child('term')),
-                    'term')
+    loveHate  = Alt(Node('NODE_NOT', Lit('-'), 'frag'),
+                    Seq(Optional(Lit('+')), 'frag')),
+    frag      = Alt(Node('NODE_PREFIX', 'prefix', 'term'),
+                    'term'),
     # A prefix is a sequence of word characters followed by a colon.
     # Xapian allows anything except colon and whitespace, but
     # restricts to registered prefixes.  Our syntax is not sensitive
@@ -402,16 +339,16 @@ class Grammar:
     # splitting happens later, unlike in Xapian where it happens
     # during parsing).
     prefix    = Seq(Text(OnePlus(CharClass('is_wordchar(c)'))),
-                    Lit(':'))
+                    Lit(':')),
 
     # XXX Is the lexing of boolean terms compatible with the existing
     # quoting that we do for boolean terms?
 
     # Xapian ignores '(' unless preceded by whitespace, parens, +, or
     # -.  We don't discriminate.
-    term      = Alt(Seq(Lit('('), '_', 'andExpr', Lit(')'), '_', n=2),
+    term      = Alt(Seq(Lit('('), '_', 'andExpr', Lit(')'), '_'),
                     Node('NODE_TERMS', Lit('"'), Text('quoted'), Lit('"'), '_'),
-                    Node('NODE_TERMS', termText, '__'))
+                    Node('NODE_TERMS', 'termText', '__')),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
@@ -420,7 +357,7 @@ class Grammar:
     # phrase and simply doesn't generate tokens for them.  For us, the
     # term generator will discard them.
     # XXX Unescape
-    quoted    = ZeroPlus(Alt(CharClass('c != \'"\''), Lit('""')))
+    quoted    = ZeroPlus(Alt(CharClass('c != \'"\''), Lit('""'))),
     # Consume a (possibly empty) term up to the next (, ) or ".  We'll
     # word-split this much later, during generation.
     #
@@ -431,12 +368,13 @@ class Grammar:
     # this is very hard.  Here we take a simpler approach where only
     # whitespace and a few operator characters that are never term
     # characters separate terms.
-    termText  = Text(ZeroPlus(CharClass("!(c == '(' || c == ')' || c == '\"')")))
+    termText  = Text(ZeroPlus(
+        CharClass("!(c == '(' || c == ')' || c == '\"')"))),
 
-    _ = ZeroPlus(CharClass('is_whitespace(c)'))
+    _ = ZeroPlus(CharClass('is_whitespace(c)')),
     __ = Alt(OnePlus(CharClass('is_whitespace(c)')),
              Lookahead(Lit('(')),
              Lookahead(Lit(')')),
-             End())
+             End()))
 
-Writer(Grammar, Grammar.root).write_to(sys.stdout)
+g.write_to(sys.stdout)
