@@ -61,6 +61,7 @@ class Grammar:
         self.__indent = 0
 
     def rules(self, **rules):
+        # XXX All of the C generation should be done in write_to
         def rec(pexpr, counter, fname=None):
             if pexpr in self.__fnames: return
             for sub in pexpr.productions:
@@ -102,6 +103,7 @@ _notmuch_node_t* _notmuch_qparser_node_create (const void *ctx, _notmuch_node_ty
 void _notmuch_qparser_node_add_child (_notmuch_node_t*, _notmuch_node_t*);
 #define unused(x) x __attribute__ ((unused))
 
+// XXX Pretty lame use of C++
 struct _user_state {
     _notmuch_node_t *node;
     struct save {
@@ -116,9 +118,9 @@ struct _user_state {
 };
 
 struct _parse_state {
-    %s user;                /* User parse state */
+    %s *user;                /* User parse state */
 };
-''' % self.__user_state_type)
+''' % (self.__user_state_type,))
 
         fp.write('\n'.join(self.__decls) + '\n\n')
         fp.write('\n'.join(self.__code).replace(' '*8, '\t') + '\n')
@@ -140,16 +142,24 @@ struct _parse_state {
     def call(self, pexpr):
         return '%s (s, pos)' % self.__fnames[pexpr]
 
+    def declare_start(self, pexpr, func_name, static=True):
+        decl = '%sbool\n%s (const char *str, %s *user)' % \
+               ('static ' if static else '', func_name, self.__user_state_type)
+        with self.func(decl):
+            self('struct _parse_state state = {user};')
+            self('Utf8Iterator pos (str);')
+            self('return %s (&state, pos);' % self.__fnames[pexpr])
+
     def fail_if_end(self):
         self('if (pos == Utf8Iterator ()) return false;')
 
     def save(self):
         self('Utf8Iterator saved_pos = pos;')
-        self('%s::save saved_user (&s->user);' % self.__user_state_type)
+        self('%s::save saved_user (s->user);' % self.__user_state_type)
 
     def restore(self):
         self('pos = saved_pos;')
-        self('saved_user.restore (&s->user);')
+        self('saved_user.restore (s->user);')
 
 def cstring(text):
     text = re.sub(b'[\x00-\x1f"\\\\\x7f-\xff]',
@@ -182,7 +192,7 @@ class CharClass(PExpr):
     def gen_c(self, g):
         g.fail_if_end()
         g('unsigned c = *pos;')
-        g('if (%s) {++pos; return true;} else return false;' % self.__expr)
+        g('if (%s) { ++pos; return true; } else return false;' % self.__expr)
 
 class Seq(PExpr):
     """Parse a sequence of productions."""
@@ -247,12 +257,12 @@ class Node(AutoSeq):
         super().__init__(*productions)
         self.__typ, self.__promote_unit = typ, promote_unit
     def gen_c(self, g):
-        g('_notmuch_node_t *parent = s->user.node,')
+        g('_notmuch_node_t *parent = s->user->node,')
         g('    *node = _notmuch_qparser_node_create (parent, %s);' % self.__typ)
         # XXX Handle allocation failure
-        g('s->user.node = node;')
+        g('s->user->node = node;')
         g('bool result = %s;' % g.call(self._production))
-        g('s->user.node = parent;')
+        g('s->user->node = parent;')
         g('if (! result) {')
         g('    talloc_free (node);')
         if self.__promote_unit:
@@ -272,7 +282,7 @@ class Text(AutoSeq):
     def gen_c(self, g):
         g('const char *start = pos.raw();')
         g('if (! %s) return false;' % g.call(self._production))
-        g('s->user.node->text = talloc_strndup (s->user.node, start, pos.raw () - start);')
+        g('s->user->node->text = talloc_strndup (s->user->node, start, pos.raw () - start);')
         g('return true;')
 
 def KW(text):
@@ -366,5 +376,26 @@ g.rules(
              Lookahead(Lit('(')),
              Lookahead(Lit(')')),
              End()))
+g.declare_start('root', 'parse')
 
 g.write_to(sys.stdout)
+print('''\
+_notmuch_node_t *
+_notmuch_qparser_parse (const void *ctx, const char *query) {
+    struct _user_state user;
+    _notmuch_node_t *result = NULL;
+    /* Create a dummy root node */
+    user.node = _notmuch_qparser_node_create (ctx, NODE_AND);
+    if (! user.node)
+	return NULL;
+    /* XXX Will need error message stuff */
+    if (! parse (query, &user))
+	goto DONE;
+    if (user.node->nchild != 1)
+	INTERNAL_ERROR ("Wrong number of root children: %d", user.node->nchild);
+    result = talloc_steal (ctx, user.node->child[0]);
+
+  DONE:
+    talloc_free (user.node);
+    return result;
+}''')
