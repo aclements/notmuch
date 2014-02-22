@@ -133,11 +133,11 @@ struct _parse_state {
         self.__indent += 1
         yield
         self.__indent -= 1
-        self('}')
-        self('')
+        self('}', '')
 
-    def __call__(self, text):
-        self.__code.append('    ' * self.__indent + text)
+    def __call__(self, *lines):
+        self.__code.extend('    ' * self.__indent + line
+                           for line in '\n'.join(lines).split('\n'))
 
     def call(self, pexpr):
         return '%s (s, pos)' % self.__fnames[pexpr]
@@ -146,20 +146,20 @@ struct _parse_state {
         decl = '%sbool\n%s (const char *str, %s *user)' % \
                ('static ' if static else '', func_name, self.__user_state_type)
         with self.func(decl):
-            self('struct _parse_state state = {user};')
-            self('Utf8Iterator pos (str);')
-            self('return %s (&state, pos);' % self.__fnames[pexpr])
+            self('struct _parse_state state = {user};',
+                 'Utf8Iterator pos (str);',
+                 'return %s (&state, pos);' % self.__fnames[pexpr])
 
     def fail_if_end(self):
         self('if (pos == Utf8Iterator ()) return false;')
 
     def save(self):
-        self('Utf8Iterator saved_pos = pos;')
-        self('%s::save saved_user (s->user);' % self.__user_state_type)
+        self('Utf8Iterator saved_pos = pos;',
+             '%s::save saved_user (s->user);' % self.__user_state_type)
 
     def restore(self):
-        self('pos = saved_pos;')
-        self('saved_user.restore (s->user);')
+        self('pos = saved_pos;',
+             'saved_user.restore (s->user);')
 
 def cstring(text):
     text = re.sub(b'[\x00-\x1f"\\\\\x7f-\xff]',
@@ -191,8 +191,8 @@ class CharClass(PExpr):
         self.__expr = expr
     def gen_c(self, g):
         g.fail_if_end()
-        g('unsigned c = *pos;')
-        g('if (%s) { ++pos; return true; } else return false;' % self.__expr)
+        g('unsigned c = *pos;',
+          'if (%s) { ++pos; return true; } else return false;' % self.__expr)
 
 class Seq(PExpr):
     """Parse a sequence of productions."""
@@ -210,7 +210,7 @@ class Alt(PExpr):
 class ZeroPlus(AutoSeq):
     """Parse zero or more occurrences of productions."""
     def gen_c(self, g):
-        g('while (%s); return true;' % g.call(self._production))
+        g('while (%s);' % g.call(self._production), 'return true;')
 
 def OnePlus(*productions):
     """Parse one or more occurrences of productions."""
@@ -219,13 +219,13 @@ def OnePlus(*productions):
 class Optional(AutoSeq):
     """Parse zero or one occurrences of productions."""
     def gen_c(self, g):
-        g('%s; return true;' % g.call(self._production))
+        g('%s;' % g.call(self._production), 'return true;')
 
 class Lookahead(AutoSeq):
     """Succeeds if productions succeed, but consumes nothing."""
     def gen_c(self, g):
         g.save()
-        g('if (!%s) return false;' % g.call(self._production))
+        g('if (! %s) return false;' % g.call(self._production))
         g.restore()
         g('return true;')
 
@@ -233,7 +233,7 @@ class NotLookahead(AutoSeq):
     """Succeeds if productions fail, but consumes nothing."""
     def gen_c(self, g):
         g.save()
-        g('if (!%s) return true;' % g.call(self._production))
+        g('if (! %s) return true;' % g.call(self._production))
         g.restore()
         g('return false;')
 
@@ -257,33 +257,34 @@ class Node(AutoSeq):
         super().__init__(*productions)
         self.__typ, self.__promote_unit = typ, promote_unit
     def gen_c(self, g):
-        g('_notmuch_node_t *parent = s->user->node,')
-        g('    *node = _notmuch_qparser_node_create (parent, %s);' % self.__typ)
+        g('_notmuch_node_t *parent = s->user->node,',
+          '    *node = _notmuch_qparser_node_create (parent, %s);' % self.__typ,
         # XXX Handle allocation failure
-        g('s->user->node = node;')
-        g('bool result = %s;' % g.call(self._production))
-        g('s->user->node = parent;')
-        g('if (! result) {')
-        g('    talloc_free (node);')
+          's->user->node = node;',
+          'bool result = %s;' % g.call(self._production),
+          's->user->node = parent;',
+          'if (! result) {',
+          '    talloc_free (node);')
         if self.__promote_unit:
-            g('} else if (node->nchild == 1) {')
-            g('    talloc_steal (parent, node->child[0]);')
-            g('    _notmuch_qparser_node_add_child (parent, node->child[0]);')
-            g('    talloc_free (node);')
-        g('} else {')
-        g('    _notmuch_qparser_node_add_child (parent, node);')
+            g('} else if (node->nchild == 1) {',
+              '    talloc_steal (parent, node->child[0]);',
+              '    _notmuch_qparser_node_add_child (parent, node->child[0]);',
+              '    talloc_free (node);')
+        g('} else {',
+          '    _notmuch_qparser_node_add_child (parent, node);',
         # XXX Handle add failure
         # XXX Need root node or something
-        g('}')
-        g('return result;')
+          '}',
+          'return result;')
 
 class Text(AutoSeq):
     """Parse production and set the text of the current Node to its match."""
     def gen_c(self, g):
-        g('const char *start = pos.raw();')
-        g('if (! %s) return false;' % g.call(self._production))
-        g('s->user->node->text = talloc_strndup (s->user->node, start, pos.raw () - start);')
-        g('return true;')
+        g('const char *start = pos.raw();',
+          'if (! %s) return false;' % g.call(self._production),
+          's->user->node->text = talloc_strndup (',
+          '    s->user->node, start, pos.raw () - start);',
+          'return true;')
 
 def KW(text):
     return Seq(Lit(text), '__')
