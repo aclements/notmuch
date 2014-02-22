@@ -38,12 +38,8 @@ import contextlib
 
 class PExpr:
     """Base class for PEG parsing expressions."""
-    NONCE = 0
-
     def __init__(self, *productions):
         self.productions = productions
-        self.fname = '_parse_n%d' % PExpr.NONCE
-        PExpr.NONCE += 1
 
     def gen_c(self, g):
         raise NotImplementedError('gen_c is abstract')
@@ -60,32 +56,34 @@ class AutoSeq(PExpr):
 class Grammar:
     def __init__(self, user_state_type):
         self.__user_state_type = user_state_type
-        self.__rules = {}
         self.__decls = []
         self.__code = []
         self.__indent = 0
-        self.__queue = []
-        self.__qpos = 0
 
     def rules(self, **rules):
-        self.__rules.update(rules)
-        self.__queue.extend(rules.values())
-        while self.__qpos < len(self.__queue):
-            pexpr = self.__queue[self.__qpos]
+        def rec(pexpr, counter, fname=None):
+            if pexpr in self.__fnames: return
+            for sub in pexpr.productions:
+                rec(sub, counter)
             # We could make these methods of the parser state, which
             # would be nice and OO, but by declaring all parser
             # functions as static, the compiler is able to inline the
             # vast majority of these functions and doesn't have to
             # emit non-inlined versions at all.
+            if not fname:
+                fname = '_parse_%s_%d' % (name, counter[0])
+                counter[0] += 1
+            self.__fnames[pexpr] = fname
             decl = ('static bool\n'
-                    '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' % \
-                    (pexpr.fname))
+                    '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' %
+                    fname)
             with self.func(decl):
                 pexpr.gen_c(self)
-                # XXX Could put result in a variable and write generic
-                # restore code here (if save).  But that does the
-                # wrong thing for Lookahead.
-            self.__qpos += 1
+        # Establish function names of named definitions
+        self.__fnames = {name: '_parse_' + name for name in rules}
+        # Generate code for all parsing expressions via post-order DFS
+        for name, pexpr in rules.items():
+            rec(pexpr, [0], self.__fnames[name])
 
     def write_to(self, fp):
         fp.write('#include <xapian.h>\n')
@@ -136,18 +134,11 @@ struct _parse_state {
         self('}')
         self('')
 
-    def resolve(self, pexpr):
-        if not isinstance(pexpr, PExpr):
-            pexpr = self.__rules[pexpr]
-        if pexpr not in self.__queue:
-            self.__queue.append(pexpr)
-        return pexpr
-
     def __call__(self, text):
         self.__code.append('    ' * self.__indent + text)
 
     def call(self, pexpr):
-        return '%s (s, pos)' % self.resolve(pexpr).fname
+        return '%s (s, pos)' % self.__fnames[pexpr]
 
     def fail_if_end(self):
         self('if (pos == Utf8Iterator ()) return false;')
