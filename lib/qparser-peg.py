@@ -36,6 +36,9 @@ import contextlib
 # last created Node, which would go up the tree until a Child consumed
 # it).
 
+# XXX For all but the 'frag' rule, an explicit lookahead Alt would be
+# better and might enable better error messages.
+
 class PExpr:
     """Base class for PEG parsing expressions."""
     def __init__(self, *productions):
@@ -291,7 +294,7 @@ def KW(text):
 
 g = Grammar('_user_state')
 g.rules(
-    root      = Seq('_', 'andExpr'),
+    root      = Seq('_', 'andExpr', End()),
 
     andExpr   = Node('NODE_AND', 'orExpr', ZeroPlus(KW('and'), 'orExpr'),
                      promote_unit=True),
@@ -318,13 +321,13 @@ g.rules(
     # than just y.  We don't special case this.
     #
     # Xapian also ignores +/- unless preceded by whitespace or an open
-    # paren, which has the effect of ignoring all +'s in "x +++y",
-    # "x#+y", and "(x)+y".  We don't discriminate.
+    # paren, which has the effect of ignoring all +'s and -'s in "x
+    # +++y", "x#+y", "(x)+y", and "-x".  We don't discriminate.
     #
     # XXX In the hand-parser, we ignore if followed by a space or
     # another + or -, but I'm not sure why.
     loveHate  = Alt(Node('NODE_NOT', Lit('-'), 'frag'),
-                    Seq(Optional(Lit('+')), 'frag')),
+                    Seq(NotLookahead(Lit('-')), Optional(Lit('+')), 'frag')),
     frag      = Alt(Node('NODE_PREFIX', 'prefix', 'term'),
                     'term'),
     # A prefix is a sequence of word characters followed by a colon.
@@ -349,7 +352,10 @@ g.rules(
     # -.  We don't discriminate.
     term      = Alt(Seq(Lit('('), '_', 'andExpr', Lit(')'), '_'),
                     Node('NODE_TERMS', Lit('"'), Text('quoted'), Lit('"'), '_'),
-                    Node('NODE_TERMS', 'termText', '__')),
+                    # Since termText is a catchall, exclude previous
+                    # branches
+                    Seq(NotLookahead(Lit('(')), NotLookahead(Lit('"')),
+                        Node('NODE_TERMS', 'termText', '__'))),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
