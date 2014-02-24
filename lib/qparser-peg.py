@@ -39,7 +39,7 @@ import contextlib
 # XXX For all but the 'frag' rule, an explicit lookahead Alt would be
 # better and might enable better error messages.
 
-class PExpr:
+class PExpr:                    # XXX Wrong name, since this isn't a PEG now
     """Base class for PEG parsing expressions."""
     def __init__(self, *productions):
         self.productions = productions
@@ -62,6 +62,7 @@ class Grammar:
         self.__decls = []
         self.__code = []
         self.__indent = 0
+        self.__errors = {}
 
     def rules(self, **rules):
         # XXX All of the C generation should be done in write_to
@@ -122,6 +123,8 @@ struct _user_state {
 
 struct _parse_state {
     %s *user;                /* User parse state */
+    const char *error_pos;
+    uint64_t error_set;
 };
 ''' % (self.__user_state_type,))
 
@@ -164,6 +167,10 @@ struct _parse_state {
         self('pos = saved_pos;',
              'saved_user.restore (s->user);')
 
+    def expected(self, msg):
+        return '_parser_error (s, pos.raw (), %#x)' % \
+            self.__errors.setdefault(msg, len(self.__errors))
+
 def cstring(text):
     text = re.sub(b'[\x00-\x1f"\\\\\x7f-\xff]',
                   lambda m: ('\\%03o' % ord(m.group(0))).encode('utf8'),
@@ -171,17 +178,18 @@ def cstring(text):
     return '"' + text.decode('ascii') + '"'
 
 class Lit(PExpr):
-    """Parse 'text' case-insensitively."""
+    """Parse 'text' case-insensitively or fail, consuming nothing."""
     def __init__(self, text):
         super().__init__()
         self.__text = text
     def gen_c(self, g):
         g.fail_if_end()
         if len(self.__text) == 1:
-            g('if (*pos != %d) return false;' % ord(self.__text))
+            g('if (*pos != %d)' % ord(self.__text))
         else:
-            g('if (strncasecmp (pos.raw(), %s, %d) != 0) return false;' %
+            g('if (strncasecmp (pos.raw(), %s, %d) != 0)' %
               (cstring(self.__text), len(self.__text.encode('utf8'))))
+        g('    return %s;' % g.expected(self.__text))
         g('%sreturn true;' % ('++pos; ' * len(self.__text)))
 
 class CharClass(PExpr):
@@ -195,25 +203,48 @@ class CharClass(PExpr):
     def gen_c(self, g):
         g.fail_if_end()
         g('unsigned c = *pos;',
-          'if (%s) { ++pos; return true; } else return false;' % self.__expr)
+          'if (%s) { ++pos; return true; } else return %s;' %
+          (self.__expr, g.expected(self.__expr)))
+
+class Empty(PExpr):
+    """Succeed, consuming nothing."""
+    def __init__(self):
+        super().__init__()
+    def gen_c(self, g):
+        g('return true;')
 
 class Seq(PExpr):
     """Parse a sequence of productions."""
     def gen_c(self, g):
-        g.save()
-        g('if (%s) return true;' % ' && '.join(map(g.call, self.productions)))
-        g.restore()
-        g('return false;')
+        g('return %s;' % ' && '.join(map(g.call, self.productions)))
 
 class Alt(PExpr):
-    """Parse one of productions, trying each in order."""
+    """Try p[0]; if it fails without consuming input, try p[1], etc.
+
+    This parser is "predictive" because it stops trying alternatives
+    as soon as one consumes any input (even if it ultimately fails).
+
+    This is equivalent to Parsec's <|> combinator.  Partridge and
+    Wright's ++ combinator differs slightly: it continues to next
+    alternative if one succeeds *without consuming input* because
+    their goal is to find the longest parse.  In practice, <|> has
+    seen dramatically more use and seems more intuitive.
+    """
     def gen_c(self, g):
-        g('return %s;' % ' || '.join(map(g.call, self.productions)))
+        g('Utf8Iterator saved_pos (pos);')
+        if len(self.productions) > 1:
+            g('bool r;')
+        for p in self.productions[:-1]:
+            g('if ((r = %s) || pos != saved_pos) return r;' % g.call(p))
+        g('return %s;' % g.call(self.productions[-1]))
 
 class ZeroPlus(AutoSeq):
     """Parse zero or more occurrences of productions."""
     def gen_c(self, g):
-        g('while (%s);' % g.call(self._production), 'return true;')
+        g('while (true) {')
+        g('    Utf8Iterator saved_pos (pos);')
+        g('    if (! %s) return pos == saved_pos;' % g.call(self._production))
+        g('}')
 
 def OnePlus(*productions):
     """Parse one or more occurrences of productions."""
@@ -222,23 +253,27 @@ def OnePlus(*productions):
 class Optional(AutoSeq):
     """Parse zero or one occurrences of productions."""
     def gen_c(self, g):
-        g('%s;' % g.call(self._production), 'return true;')
+        g('Utf8Iterator saved_pos (pos);',
+          'return %s || pos == saved_pos;' % g.call(self._production))
 
 class Lookahead(AutoSeq):
-    """Succeeds if productions succeed, but consumes nothing."""
+    """If productions succeed, consumes nothing.
+
+    If productions fail and consume input, so does this.
+    """
     def gen_c(self, g):
-        g.save()
-        g('if (! %s) return false;' % g.call(self._production))
-        g.restore()
-        g('return true;')
+        g('Utf8Iterator saved_pos (pos);',
+          'bool r = %s;' % g.call(self._production),
+          'if (r) pos = saved_pos;',
+          'return r;')
 
 class NotLookahead(AutoSeq):
-    """Succeeds if productions fail, but consumes nothing."""
+    """Succeeds if productions fail.  Always consumes nothing."""
     def gen_c(self, g):
-        g.save()
-        g('if (! %s) return true;' % g.call(self._production))
-        g.restore()
-        g('return false;')
+        g('Utf8Iterator saved_pos (pos);',
+          'bool r = %s;' % g.call(self._production),
+          'pos = saved_pos;',
+          'return ! r;')
 
 class End(PExpr):
     """Succeeds if there is no more input.  Consumes nothing."""
@@ -327,7 +362,7 @@ g.rules(
     # XXX In the hand-parser, we ignore if followed by a space or
     # another + or -, but I'm not sure why.
     loveHate  = Alt(Node('NODE_NOT', Lit('-'), 'frag'),
-                    Seq(NotLookahead(Lit('-')), Optional(Lit('+')), 'frag')),
+                    Seq(Optional(Lit('+')), 'frag')),
     frag      = Alt(Node('NODE_PREFIX', 'prefix', 'term'),
                     'term'),
     # A prefix is a sequence of word characters followed by a colon.
@@ -354,8 +389,7 @@ g.rules(
                     Node('NODE_TERMS', Lit('"'), Text('quoted'), Lit('"'), '_'),
                     # Since termText is a catchall, exclude previous
                     # branches
-                    Seq(NotLookahead(Lit('(')), NotLookahead(Lit('"')),
-                        Node('NODE_TERMS', 'termText', '__'))),
+                    Seq(Node('NODE_TERMS', 'termText', '__'))),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
