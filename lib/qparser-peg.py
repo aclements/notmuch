@@ -252,14 +252,14 @@ class Cut(PExpr):
     def gen_c(self, g):
         g('(void)pos;', '*s->backtrack = false;', 'return true;')
 
-class ZeroPlus(AutoSeq):
+class Many(AutoSeq):
     """Parse zero or more occurrences of productions."""
     def gen_c(self, g):
         g('while (%s);' % g.call(self._production), 'return true;')
 
-def OnePlus(*productions):
+def Many1(*productions):
     """Parse one or more occurrences of productions."""
-    return Seq(*(productions + (ZeroPlus(*productions),)))
+    return Seq(*(productions + (Many(*productions),)))
 
 class Optional(AutoSeq):
     """Parse zero or one occurrences of productions."""
@@ -338,9 +338,9 @@ g = Grammar('_user_state')
 g.rules(
     root      = Seq('_', 'andExpr', End()),
 
-    andExpr   = Node('NODE_AND', 'orExpr', ZeroPlus(KW('and'), 'orExpr'),
+    andExpr   = Node('NODE_AND', 'orExpr', Many(KW('and'), 'orExpr'),
                      promote_unit=True),
-    orExpr    = Node('NODE_OR', 'unaryExpr', ZeroPlus(KW('or'), 'unaryExpr'),
+    orExpr    = Node('NODE_OR', 'unaryExpr', Many(KW('or'), 'unaryExpr'),
                      promote_unit=True),
     unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), '__', 'unaryExpr'),
                     'compound'),
@@ -353,8 +353,8 @@ g.rules(
     #
     # XXX Peephole optimization of removing COMPOUND for HATE-only terms
     compound  = Node('NODE_COMPOUND',
-                     ZeroPlus(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
-                              'loveHate')),
+                     Many(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
+                          'loveHate')),
     # A love prefix has no effect, since the default compound operator
     # is AND anyway.  Hates are like NOTs, just with lower precedence.
     #
@@ -384,8 +384,7 @@ g.rules(
     # itself much like how Xapian lexes boolean terms anyway (and term
     # splitting happens later, unlike in Xapian where it happens
     # during parsing).
-    prefix    = Seq(Text(OnePlus(CharClass('is_wordchar(c)'))),
-                    Lit(':')),
+    prefix    = Seq(Text(Many1(CharClass('is_wordchar(c)'))), Lit(':')),
 
     # XXX Is the lexing of boolean terms compatible with the existing
     # quoting that we do for boolean terms?
@@ -404,7 +403,7 @@ g.rules(
     # phrase and simply doesn't generate tokens for them.  For us, the
     # term generator will discard them.
     # XXX Unescape
-    quoted    = ZeroPlus(Alt(CharClass('c != \'"\''), Lit('""'))),
+    quoted    = Many(Alt(CharClass('c != \'"\''), Lit('""'))),
     # Consume a (possibly empty) term up to the next (, ) or ".  We'll
     # word-split this much later, during generation.
     #
@@ -415,11 +414,10 @@ g.rules(
     # this is very hard.  Here we take a simpler approach where only
     # whitespace and a few operator characters that are never term
     # characters separate terms.
-    termText  = Text(ZeroPlus(
-        CharClass("!(c == '(' || c == ')' || c == '\"')"))),
+    termText  = Text(Many(CharClass("!(c == '(' || c == ')' || c == '\"')"))),
 
-    _ = ZeroPlus(CharClass('is_whitespace(c)')),
-    __ = Alt(OnePlus(CharClass('is_whitespace(c)')),
+    _ = Many(CharClass('is_whitespace(c)')),
+    __ = Alt(Many1(CharClass('is_whitespace(c)')),
              Lookahead(Lit('(')),
              Lookahead(Lit(')')),
              End()))
