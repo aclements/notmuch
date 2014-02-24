@@ -1,3 +1,15 @@
+"""Simple PEG parser generator.
+
+This implements a C parser generator for Parsing Expression Grammars
+[1] with support for explicit cut operators [2].
+
+[1] Ford, B.  Parsing Expression Grammars: A recognition-based
+syntactic foundation.
+
+[2] Mizushima, K., Maeda, A., Yamaguchi, Y.  Packrat parsers can
+handle practical grammars in mostly constant space.
+"""
+
 import sys
 import re
 import contextlib
@@ -43,6 +55,8 @@ class PExpr:
     """Base class for PEG parsing expressions."""
     def __init__(self, *productions):
         self.productions = productions
+        self._has_cut \
+            = any(p._has_cut for p in productions if isinstance(p, PExpr))
 
     def gen_c(self, g):
         raise NotImplementedError('gen_c is abstract')
@@ -86,7 +100,9 @@ class Grammar:
         # Establish function names of named definitions
         self.__fnames = {name: '_parse_' + name for name in rules}
         # Generate code for all parsing expressions via post-order DFS
-        for name, pexpr in rules.items():
+        for name, pexpr in sorted(rules.items()):
+            if pexpr._has_cut:
+                raise ValueError('Top-level cut in rule %r' % name)
             rec(pexpr, [0], self.__fnames[name])
 
     def write_to(self, fp):
@@ -122,6 +138,7 @@ struct _user_state {
 
 struct _parse_state {
     %s *user;                /* User parse state */
+    bool *backtrack;         /* Backtracking allowed */
 };
 ''' % (self.__user_state_type,))
 
@@ -149,7 +166,7 @@ struct _parse_state {
         decl = '%sbool\n%s (const char *str, %s *user)' % \
                ('static ' if static else '', func_name, self.__user_state_type)
         with self.func(decl):
-            self('struct _parse_state state = {user};',
+            self('struct _parse_state state = {user, NULL};',
                  'Utf8Iterator pos (str);',
                  'return %s (&state, pos);' % self.__fnames[pexpr])
 
@@ -207,8 +224,33 @@ class Seq(PExpr):
 
 class Alt(PExpr):
     """Parse one of productions, trying each in order."""
+    def __init__(self, *productions):
+        super().__init__(*productions)
+        self._has_cut = False
+        if isinstance(productions[-1], PExpr) and productions[-1]._has_cut:
+            raise ValueError('Last alternate must not have a cut')
     def gen_c(self, g):
-        g('return %s;' % ' || '.join(map(g.call, self.productions)))
+        if not any(p._has_cut for p in self.productions if isinstance(p, PExpr)):
+            g('return %s;' % ' || '.join(map(g.call, self.productions)))
+            return
+        g('bool *saved_backtrack = s->backtrack;',
+          'bool backtrack = true;',
+          's->backtrack = &backtrack;',
+          'bool r;')
+        for p in self.productions[:-1]:
+            g('if ((r = %s) || ! backtrack) goto DONE;' % g.call(p))
+        g('r = %s;' % g.call(self.productions[-1]),
+          'DONE:',
+          's->backtrack = saved_backtrack;',
+          'return r;')
+
+class Cut(PExpr):
+    """Commit to this branch of the containing Alt.  Consumes nothing."""
+    def __init__(self):
+        super().__init__()
+        self._has_cut = True
+    def gen_c(self, g):
+        g('(void)pos;', '*s->backtrack = false;', 'return true;')
 
 class ZeroPlus(AutoSeq):
     """Parse zero or more occurrences of productions."""
@@ -300,7 +342,7 @@ g.rules(
                      promote_unit=True),
     orExpr    = Node('NODE_OR', 'unaryExpr', ZeroPlus(KW('or'), 'unaryExpr'),
                      promote_unit=True),
-    unaryExpr = Alt(Node('NODE_NOT', KW('not'), '__', 'unaryExpr'),
+    unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), '__', 'unaryExpr'),
                     'compound'),
 
     # A compound is a sequence of possibly-loved/hated
@@ -326,8 +368,8 @@ g.rules(
     #
     # XXX In the hand-parser, we ignore if followed by a space or
     # another + or -, but I'm not sure why.
-    loveHate  = Alt(Node('NODE_NOT', Lit('-'), 'frag'),
-                    Seq(NotLookahead(Lit('-')), Optional(Lit('+')), 'frag')),
+    loveHate  = Alt(Node('NODE_NOT', Lit('-'), Cut(), 'frag'),
+                    Seq(Optional(Lit('+')), 'frag')),
     frag      = Alt(Node('NODE_PREFIX', 'prefix', 'term'),
                     'term'),
     # A prefix is a sequence of word characters followed by a colon.
@@ -350,12 +392,10 @@ g.rules(
 
     # Xapian ignores '(' unless preceded by whitespace, parens, +, or
     # -.  We don't discriminate.
-    term      = Alt(Seq(Lit('('), '_', 'andExpr', Lit(')'), '_'),
-                    Node('NODE_TERMS', Lit('"'), Text('quoted'), Lit('"'), '_'),
-                    # Since termText is a catchall, exclude previous
-                    # branches
-                    Seq(NotLookahead(Lit('(')), NotLookahead(Lit('"')),
-                        Node('NODE_TERMS', 'termText', '__'))),
+    term      = Alt(Seq(Lit('('), Cut(), '_', 'andExpr', Lit(')'), '_'),
+                    Node('NODE_TERMS',
+                         Lit('"'), Cut(), Text('quoted'), Lit('"'), '_'),
+                    Seq(Node('NODE_TERMS', 'termText', '__'))),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
