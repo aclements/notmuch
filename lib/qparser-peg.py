@@ -119,7 +119,7 @@ class Grammar:
     size_t nchild;
     struct _notmuch_node **child;
 } _notmuch_node_t;
-enum _notmuch_node_type {NODE_AND, NODE_OR, NODE_NOT, NODE_COMPOUND, NODE_PREFIX, NODE_TERMS};
+enum _notmuch_node_type {NODE_AND, NODE_OR, NODE_NOT, NODE_GROUP, NODE_PREFIX, NODE_TERMS};
 _notmuch_node_t* _notmuch_qparser_node_create (const void *ctx, _notmuch_node_type type);
 void _notmuch_qparser_node_add_child (_notmuch_node_t*, _notmuch_node_t*);
 #define unused(x) x __attribute__ ((unused))
@@ -376,20 +376,20 @@ g.rules(
     orExpr    = Node('NODE_OR', 'unaryExpr', Many(KW('or'), 'unaryExpr'),
                      promote_unit=True),
     unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), '__', 'unaryExpr'),
-                    'compound'),
+                    'group'),
 
-    # A compound is a sequence of possibly-loved/hated
-    # possibly-prefixed terms and subqueries.  We stop consuming if we
-    # hit a bare operator, but note that we intentionally accept text
-    # that looks like an operator further down in the grammar if it's
-    # loved/hated or prefixed.
+    # A group is a sequence of possibly-loved/hated possibly-prefixed
+    # terms and subqueries.  We stop consuming if we hit a bare
+    # operator, but note that we intentionally accept text that looks
+    # like an operator further down in the grammar if it's loved/hated
+    # or prefixed.
     #
-    # XXX Peephole optimization of removing COMPOUND for HATE-only terms
-    compound  = Node('NODE_COMPOUND',
-                     Many(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
-                          'loveHate')),
-    # A love prefix has no effect, since the default compound operator
-    # is AND anyway.  Hates are like NOTs, just with lower precedence.
+    # XXX Peephole optimization of removing GROUP for HATE-only terms
+    group  = Node('NODE_GROUP',
+                  Many(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
+                       'loveHate')),
+    # A love prefix has no effect, since the default group operator is
+    # AND anyway.  Hates are like NOTs, just with lower precedence.
     #
     # Xapian treats a hate following an AND like "x AND -y z" as "x
     # AND NOT y z", which causes *both* y and z to be negated, rather
