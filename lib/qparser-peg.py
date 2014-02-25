@@ -76,6 +76,7 @@ class Grammar:
         self.__decls = []
         self.__code = []
         self.__indent = 0
+        self.__errors = {}
 
     def rules(self, **rules):
         # XXX All of the C generation should be done in write_to
@@ -109,6 +110,7 @@ class Grammar:
         fp.write('#include <xapian.h>\n')
         fp.write('#include <talloc.h>\n')
         fp.write('#include <strings.h>\n')
+        fp.write('#include <stdint.h>\n')
         fp.write('using namespace Xapian::Unicode;\n')
         fp.write('using Xapian::Utf8Iterator;\n')
         # XXX
@@ -136,9 +138,29 @@ struct _user_state {
     };
 };
 
+struct _parser_error_info {
+    const char *error_pos;   /* Error position */
+    uint64_t error_set;      /* Errors at error_pos */
+    unsigned disable;        /* Error tracking disable depth */
+};
+
+static bool
+_parser_error (struct _parser_error_info *e, const char *pos, uint64_t set) {
+    if (e->disable) {
+        return false;
+    } else if (pos == e->error_pos) {
+        e->error_set |= set;
+    } else if (pos > e->error_pos) {
+        e->error_pos = pos;
+        e->error_set = set;
+    }
+    return false;
+}
+
 struct _parse_state {
     %s *user;                /* User parse state */
     bool *backtrack;         /* Backtracking allowed */
+    struct _parser_error_info error;
 };
 ''' % (self.__user_state_type,))
 
@@ -166,20 +188,28 @@ struct _parse_state {
         decl = '%sbool\n%s (const char *str, %s *user)' % \
                ('static ' if static else '', func_name, self.__user_state_type)
         with self.func(decl):
-            self('struct _parse_state state = {user, NULL};',
+            self('struct _parse_state state = {user, NULL, {NULL, 0, 0}};',
                  'Utf8Iterator pos (str);',
                  'return %s (&state, pos);' % self.__fnames[pexpr])
 
-    def fail_if_end(self):
-        self('if (pos == Utf8Iterator ()) return false;')
+    def fail_if_end(self, msg):
+        self('if (pos == Utf8Iterator ()) return %s;' % self.expected(msg))
 
-    def save(self):
+    def save(self, errors=False):
         self('Utf8Iterator saved_pos = pos;',
              '%s::save saved_user (s->user);' % self.__user_state_type)
+        if errors:
+            self('++s->error.disable;')
 
-    def restore(self):
+    def restore(self, errors=False):
         self('pos = saved_pos;',
              'saved_user.restore (s->user);')
+        if errors:
+            self('--s->error.disable;')
+
+    def expected(self, msg):
+        return '_parser_error (&s->error, pos.raw (), %#x)' % \
+            self.__errors.setdefault(msg, len(self.__errors))
 
 def cstring(text):
     text = re.sub(b'[\x00-\x1f"\\\\\x7f-\xff]',
@@ -193,12 +223,13 @@ class Lit(PExpr):
         super().__init__()
         self.__text = text
     def gen_c(self, g):
-        g.fail_if_end()
+        g.fail_if_end(self.__text)
         if len(self.__text) == 1:
-            g('if (*pos != %d) return false;' % ord(self.__text))
+            g('if (*pos != %d)' % ord(self.__text))
         else:
-            g('if (strncasecmp (pos.raw(), %s, %d) != 0) return false;' %
+            g('if (strncasecmp (pos.raw(), %s, %d) != 0)' %
               (cstring(self.__text), len(self.__text.encode('utf8'))))
+        g('    return %s;' % g.expected(self.__text))
         g('%sreturn true;' % ('++pos; ' * len(self.__text)))
 
 class CharClass(PExpr):
@@ -210,9 +241,10 @@ class CharClass(PExpr):
         super().__init__()
         self.__expr = expr
     def gen_c(self, g):
-        g.fail_if_end()
+        g.fail_if_end(self.__expr)
         g('unsigned c = *pos;',
-          'if (%s) { ++pos; return true; } else return false;' % self.__expr)
+          'if (%s) { ++pos; return true; } else return %s;' %
+          (self.__expr, g.expected(self.__expr)))
 
 class Seq(PExpr):
     """Parse a sequence of productions."""
@@ -269,17 +301,17 @@ class Optional(AutoSeq):
 class Lookahead(AutoSeq):
     """Succeeds if productions succeed, but consumes nothing."""
     def gen_c(self, g):
-        g.save()
+        g.save(errors=True)
         g('if (! %s) return false;' % g.call(self._production))
-        g.restore()
+        g.restore(errors=True)
         g('return true;')
 
 class NotLookahead(AutoSeq):
     """Succeeds if productions fail, but consumes nothing."""
     def gen_c(self, g):
-        g.save()
+        g.save(errors=True)
         g('if (! %s) return true;' % g.call(self._production))
-        g.restore()
+        g.restore(errors=True)
         g('return false;')
 
 class End(PExpr):
@@ -338,6 +370,7 @@ g = Grammar('_user_state')
 g.rules(
     root      = Seq('_', 'andExpr', End()),
 
+    # XXX Do we need to have (and support) a cut after 'and'?
     andExpr   = Node('NODE_AND', 'orExpr', Many(KW('and'), 'orExpr'),
                      promote_unit=True),
     orExpr    = Node('NODE_OR', 'unaryExpr', Many(KW('or'), 'unaryExpr'),
@@ -436,8 +469,8 @@ _notmuch_qparser_parse (const void *ctx, const char *query) {
     /* XXX Will need error message stuff */
     if (! parse (query, &user))
 	goto DONE;
-    if (user.node->nchild != 1)
-	INTERNAL_ERROR ("Wrong number of root children: %d", user.node->nchild);
+//    if (user.node->nchild != 1)
+//	INTERNAL_ERROR ("Wrong number of root children: %d", user.node->nchild);
     result = talloc_steal (ctx, user.node->child[0]);
 
   DONE:
