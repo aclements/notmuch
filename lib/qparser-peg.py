@@ -94,7 +94,7 @@ class Grammar:
                 counter[0] += 1
             self.__fnames[pexpr] = fname
             decl = ('static bool\n'
-                    '%s (unused (struct _parse_state *s), Utf8Iterator &pos)' %
+                    '%s (struct _parse_state *s, Utf8Iterator &pos)' %
                     fname)
             with self.func(decl):
                 pexpr.gen_c(self)
@@ -107,36 +107,12 @@ class Grammar:
             rec(pexpr, [0], self.__fnames[name])
 
     def write_to(self, fp):
-        fp.write('#include <xapian.h>\n')
-        fp.write('#include <talloc.h>\n')
-        fp.write('#include <strings.h>\n')
-        fp.write('#include <stdint.h>\n')
-        fp.write('using namespace Xapian::Unicode;\n')
-        fp.write('using Xapian::Utf8Iterator;\n')
-        # XXX
-        fp.write('''typedef struct _notmuch_node {
-    const char *text;
-    size_t nchild;
-    struct _notmuch_node **child;
-} _notmuch_node_t;
-enum _notmuch_node_type {NODE_AND, NODE_OR, NODE_NOT, NODE_GROUP, NODE_PREFIX, NODE_TERMS};
-_notmuch_node_t* _notmuch_qparser_node_create (const void *ctx, _notmuch_node_type type);
-void _notmuch_qparser_node_add_child (_notmuch_node_t*, _notmuch_node_t*);
-#define unused(x) x __attribute__ ((unused))
+        fp.write('''\
+#include <xapian.h>
+#include <strings.h>
+#include <stdint.h>
 
-// XXX Pretty lame use of C++
-struct _user_state {
-    _notmuch_node_t *node;
-    struct save {
-        size_t nchild;
-        save (const _user_state *u) : nchild (u->node ? u->node->nchild : 0) {}
-        void restore (_user_state *u) {
-            if (u->node)
-                u->node->nchild = nchild;
-            // XXX Free dangling children
-        }
-    };
-};
+using Xapian::Utf8Iterator;
 
 struct _parser_error_info {
     const char *error_pos;   /* Error position */
@@ -319,7 +295,7 @@ class End(PExpr):
     def __init__(self):
         super().__init__()
     def gen_c(self, g):
-        g('return (pos == Utf8Iterator());')
+        g('return (pos == Utf8Iterator()) || %s;' % g.expected('end'))
 
 class Node(AutoSeq):
     """Like Seq, but creates a new Node object.
@@ -334,9 +310,9 @@ class Node(AutoSeq):
         super().__init__(*productions)
         self.__typ, self.__promote_unit = typ, promote_unit
     def gen_c(self, g):
-        g('_notmuch_node_t *parent = s->user->node,',
-          '    *node = _notmuch_qparser_node_create (parent, %s);' % self.__typ,
-        # XXX Handle allocation failure
+        g('_notmuch_qnode_t *parent = s->user->node,',
+          '    *node = _notmuch_qnode_create (parent, %s, NULL, NULL);' % self.__typ,
+          # XXX Handle allocation failure
           's->user->node = node;',
           'bool result = %s;' % g.call(self._production),
           's->user->node = parent;',
@@ -345,12 +321,11 @@ class Node(AutoSeq):
         if self.__promote_unit:
             g('} else if (node->nchild == 1) {',
               '    talloc_steal (parent, node->child[0]);',
-              '    _notmuch_qparser_node_add_child (parent, node->child[0]);',
+              '    _notmuch_qnode_add_child (parent, node->child[0], NULL);',
               '    talloc_free (node);')
         g('} else {',
-          '    _notmuch_qparser_node_add_child (parent, node);',
-        # XXX Handle add failure
-        # XXX Need root node or something
+          '    _notmuch_qnode_add_child (parent, node, NULL);',
+          # XXX Handle add failure
           '}',
           'return result;')
 
@@ -456,21 +431,46 @@ g.rules(
              End()))
 g.declare_start('root', 'parse')
 
+print('''\
+/* Automatically generated.  DO NOT EDIT */
+
+#include "qparser.h"
+#include "notmuch-private.h"
+
+#include <xapian.h>
+
+using namespace Xapian::Unicode;
+
+// XXX Pretty lame use of C++
+struct _user_state {
+    _notmuch_qnode_t *node;
+    struct save {
+        size_t nchild;
+        save (const _user_state *u) : nchild (u->node ? u->node->nchild : 0) {}
+        void restore (_user_state *u) {
+            if (u->node)
+                u->node->nchild = nchild;
+            // XXX Free dangling children
+        }
+    };
+};
+''')
 g.write_to(sys.stdout)
 print('''\
-_notmuch_node_t *
+_notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query) {
     struct _user_state user;
-    _notmuch_node_t *result = NULL;
+    _notmuch_qnode_t *result = NULL;
     /* Create a dummy root node */
-    user.node = _notmuch_qparser_node_create (ctx, NODE_AND);
+    /* XXX error_out */
+    user.node = _notmuch_qnode_create (ctx, NODE_AND, NULL, NULL);
     if (! user.node)
 	return NULL;
     /* XXX Will need error message stuff */
     if (! parse (query, &user))
 	goto DONE;
-//    if (user.node->nchild != 1)
-//	INTERNAL_ERROR ("Wrong number of root children: %d", user.node->nchild);
+    if (user.node->nchild != 1)
+	INTERNAL_ERROR ("Wrong number of root children: %zu", user.node->nchild);
     result = talloc_steal (ctx, user.node->child[0]);
 
   DONE:
