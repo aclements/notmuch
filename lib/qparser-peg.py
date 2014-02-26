@@ -413,8 +413,9 @@ g.rules(
     # term generator will discard them.
     # XXX Unescape
     quoted    = Many(Alt(CharClass('c != \'"\''), Lit('""'))),
-    # Consume a (possibly empty) term up to the next (, ) or ".  We'll
-    # word-split this much later, during generation.
+    # Consume a (possibly empty) term up to the next (, ), ", or
+    # whitespace.  We'll word-split this much later, during
+    # generation.
     #
     # Xapian permits other characters to separate term phrases.  For
     # example, "x#y" is parsed as two separate (non-phrase) terms.
@@ -423,7 +424,8 @@ g.rules(
     # this is very hard.  Here we take a simpler approach where only
     # whitespace and a few operator characters that are never term
     # characters separate terms.
-    termText  = Text(Many(CharClass("!(c == '(' || c == ')' || c == '\"')"))),
+    termText  = Text(Many(CharClass(
+        "!(c == '(' || c == ')' || c == '\"' || is_whitespace (c))"))),
 
     _ = Many(CharClass('is_whitespace(c)')),
     __ = Alt(Many1(CharClass('is_whitespace(c)')),
