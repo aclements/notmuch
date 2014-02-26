@@ -33,8 +33,9 @@
  * generated.
  */
 
-#include "../lib/notmuch-private.h"
-#include "../lib/database-private.h"
+#include "../lib/qparser.h"
+#include "../lib/notmuch-private.h"  // XXX ?
+#include "../lib/database-private.h" // XXX ?
 
 extern "C" {
 /* notmuch-client.h also defines INTERNAL_ERROR */
@@ -42,67 +43,67 @@ extern "C" {
 #include "../notmuch-client.h"
 }
 
-static _notmuch_qparser_t *qparser;
+// static _notmuch_qparser_t *qparser;
 static Xapian::QueryParser xqparser;
 
-static char *
-query_desc (void *ctx, Xapian::Query q)
-{
-    char *desc = talloc_strdup (ctx, q.get_description ().c_str ());
-    desc += strlen ("Xapian::Query(");
-    desc[strlen(desc) - 1] = 0;
-    return desc;
-}
+// static char *
+// query_desc (void *ctx, Xapian::Query q)
+// {
+//     char *desc = talloc_strdup (ctx, q.get_description ().c_str ());
+//     desc += strlen ("Xapian::Query(");
+//     desc[strlen(desc) - 1] = 0;
+//     return desc;
+// }
 
 static void
 test_one (void *ctx, const char *query_str)
 {
     void *local = talloc_new (ctx);
     Xapian::Query q;
-    _notmuch_token_t *toks, *root;
-    char *error, *qparser_desc, *xqparser_desc;
+    _notmuch_qnode_t *root;
+    // char *error, *qparser_desc, *xqparser_desc;
 
-    toks = _notmuch_qparser_lex (local, qparser, query_str);
-    printf("[lex]    %s\n", _notmuch_token_show_list (local, toks));
+    // toks = _notmuch_qparser_lex (local, qparser, query_str);
+    // printf("[lex]    %s\n", _notmuch_token_show_list (local, toks));
 
-    root = _notmuch_qparser_parse (local, qparser, query_str);
-    printf("[parse]  %s\n", _notmuch_token_show_tree (local, root));
+    root = _notmuch_qparser_parse (local, query_str);
+    printf("[parse]  %s\n", _notmuch_qnode_tree_to_string (local, root));
 
-    root = _notmuch_qparser_transform (qparser, root);
-    q = _notmuch_qparser_generate (local, qparser, root, &error);
-    if (error)
-	qparser_desc = talloc_asprintf(local, "error %s", error);
-    else
-	qparser_desc = query_desc (local, q);
-    printf("[gen]    %s\n", qparser_desc);
+    // root = _notmuch_qparser_transform (qparser, root);
+    // q = _notmuch_qparser_generate (local, qparser, root, &error);
+    // if (error)
+    // 	qparser_desc = talloc_asprintf(local, "error %s", error);
+    // else
+    // 	qparser_desc = query_desc (local, q);
+    // printf("[gen]    %s\n", qparser_desc);
 
-    try {
-	unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
-			      Xapian::QueryParser::FLAG_PHRASE |
-			      Xapian::QueryParser::FLAG_LOVEHATE |
-			      Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
-			      Xapian::QueryParser::FLAG_WILDCARD |
-			      Xapian::QueryParser::FLAG_PURE_NOT);
-	q = xqparser.parse_query (query_str, flags);
-	xqparser_desc = query_desc (local, q);
-	if (strcmp (qparser_desc, xqparser_desc) != 0)
-	    printf("[xapian] %s\n", xqparser_desc);
-    } catch (const Xapian::QueryParserError & e) {
-	printf("[xapian] error %s\n", e.get_msg ().c_str ());
-    }
+    // try {
+    // 	unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
+    // 			      Xapian::QueryParser::FLAG_PHRASE |
+    // 			      Xapian::QueryParser::FLAG_LOVEHATE |
+    // 			      Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
+    // 			      Xapian::QueryParser::FLAG_WILDCARD |
+    // 			      Xapian::QueryParser::FLAG_PURE_NOT);
+    // 	q = xqparser.parse_query (query_str, flags);
+    // 	xqparser_desc = query_desc (local, q);
+    // 	if (strcmp (qparser_desc, xqparser_desc) != 0)
+    // 	    printf("[xapian] %s\n", xqparser_desc);
+    // } catch (const Xapian::QueryParserError & e) {
+    // 	printf("[xapian] error %s\n", e.get_msg ().c_str ());
+    // }
 
     talloc_free (local);
 }
 
-static _notmuch_qparser_t *
-create_qparser (void *ctx)
-{
-    _notmuch_qparser_t *qparser = _notmuch_qparser_create (ctx, NULL);
-    _notmuch_qparser_add_db_prefix (qparser, "prob", "P", FALSE);
-    _notmuch_qparser_add_db_prefix (qparser, "lit", "L", TRUE);
-    _notmuch_qparser_add_db_prefix (qparser, "tag", "K", TRUE);
-    return qparser;
-}
+// static _notmuch_qparser_t *
+// create_qparser (void *ctx)
+// {
+//     _notmuch_qparser_t *qparser = _notmuch_qparser_create (ctx, NULL);
+//     _notmuch_qparser_add_db_prefix (qparser, "prob", "P", FALSE);
+//     _notmuch_qparser_add_db_prefix (qparser, "lit", "L", TRUE);
+//     _notmuch_qparser_add_db_prefix (qparser, "tag", "K", TRUE);
+//     return qparser;
+// }
 
 static Xapian::QueryParser
 create_xapian_qparser (void)
@@ -122,7 +123,7 @@ main (int argc, char **argv)
 
     ctx = talloc_new (NULL);
 
-    qparser = create_qparser (ctx);
+    // qparser = create_qparser (ctx);
     xqparser = create_xapian_qparser ();
 
     if (argc > 1) {

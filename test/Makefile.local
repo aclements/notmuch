@@ -35,7 +35,7 @@ $(dir)/symbol-test: $(dir)/symbol-test.o lib/$(LINKER_NAME)
 $(dir)/parse-time: $(dir)/parse-time.o parse-time-string/parse-time-string.o
 	$(call quiet,CC) $^ -o $@
 
-$(dir)/qparser-test: $(dir)/qparser-test.o notmuch-config.o query-string.o lib/libnotmuch.a
+$(dir)/qparser-test: $(dir)/qparser-test.o notmuch-config.o query-string.o lib/libnotmuch.a util/libutil.a
 	$(call quiet,CXX $(CXXFLAGS)) $^ $(FINAL_LIBNOTMUCH_LDFLAGS) -o $@
 
 $(dir)/have-compact: Makefile.config
