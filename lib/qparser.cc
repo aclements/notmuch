@@ -511,25 +511,30 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 
     switch (node->type) {
     case NODE_AND:
-	if (node->child[0]->type == NODE_NOT &&
-	    node->child[1]->type != NODE_NOT) {
-	    /* Put NOT on right */
-	    _notmuch_qnode_t *tmp = node->child[0];
-	    node->child[0] = node->child[1];
-	    node->child[1] = tmp;
+	for (size_t i = 0; i < node->nchild; ++i) {
+	    Query::op op = Query::OP_AND;
+	    if (l.empty ()) {
+		l = generate (s, node->child[i]);
+	    } else if (node->child[i]->type == NODE_NOT) {
+		r = generate (s, node->child[i]->child[0]);
+		op = Query::OP_AND_NOT;
+	    } else {
+		r = generate (s, node->child[i]);
+	    }
+	    if (! r.empty())
+		l = Query (op, l, r);
 	}
-	l = generate (s, node->child[0]);
-	if (node->child[1]->type == NODE_NOT) {
-	    r = generate (s, node->child[0]->child[0]);
-	    return Query (Query::OP_AND_NOT, l, r);
-	}
-	r = generate (s, node->child[1]);
-	return Query (Query::OP_AND, l, r);
+	return l;
 
     case NODE_OR:
-	l = generate (s, node->child[0]);
-	r = generate (s, node->child[1]);
-	return Query (Query::OP_OR, l, r);
+	for (size_t i = 0; i < node->nchild; ++i) {
+	    r = generate (s, node->child[i]);
+	    if (l.empty ())
+		l = r;
+	    else if (! r.empty())
+		l = Query (Query::OP_OR, l, r);
+	}
+	return l;
 
     case NODE_NOT:
 	if (node->child[0]->type == NODE_NOT)

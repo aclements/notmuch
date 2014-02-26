@@ -36,7 +36,7 @@ enum _notmuch_qnode_type
     /* The first four token types appear only in the lexer output and
      * never in the parse tree. */
     TOK_LOVE, TOK_HATE, TOK_BRA, TOK_KET,
-    /* Binary operators.  These have two children. */
+    /* Binary operators.  These have two or more children. */
     NODE_AND, NODE_OR,
     /* Unary operators.  These have one child.
      *
