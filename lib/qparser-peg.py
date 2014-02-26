@@ -402,7 +402,8 @@ g.rules(
     term      = Alt(Seq(Lit('('), Cut(), '_', 'andExpr', Lit(')'), '_'),
                     Node('NODE_TERMS',
                          Lit('"'), Cut(), Text('quoted'), Lit('"'), '_'),
-                    Seq(Node('NODE_TERMS', 'termText', '__'))),
+                    Seq(Node('NODE_TERMS', NotLookahead(End()),
+                             'termText', '__'))),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
