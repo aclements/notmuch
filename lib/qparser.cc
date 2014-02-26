@@ -77,7 +77,6 @@ _notmuch_qnode_add_child (_notmuch_qnode_t *parent,
 	    return;
 	}
 	parent->child = new_child;
-	parent->nchild = new_count;
     }
     parent->child[parent->nchild++] = child;
 }
