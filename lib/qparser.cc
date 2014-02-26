@@ -45,7 +45,7 @@ _notmuch_qnode_create (const void *ctx, enum _notmuch_qnode_type type,
 {
     _notmuch_qnode_t *node = talloc (ctx, _notmuch_qnode_t);
     if (! node) {
-	if (error_out && ! *error_out)
+	if (! *error_out)
 	    *error_out = "Out of memory allocating token";
 	return NULL;
     }
@@ -88,7 +88,7 @@ qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
 	return talloc_asprintf (ctx, "<bad type %d>", node->type);
 
     if (node->type == NODE_TERMS)
-	return talloc_asprintf (ctx, "\"%s\"", node->text);
+	return talloc_asprintf (ctx, "TERMS/\"%s\"", node->text);
     else if (node->type == NODE_PREFIX)
 	return talloc_asprintf (ctx, "PREFIX/%s", node->text);
     else if (node->type == NODE_QUERY)
@@ -547,7 +547,7 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	if (! *s->error_out)
 	    *s->error_out = talloc_asprintf (
 		s->ctx, "Unknown prefix '%s' in query", node->text);
-	return Query();
+	return Query ();
 
     case NODE_GROUP:
 	/* XXX */

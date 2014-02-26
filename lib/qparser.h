@@ -24,7 +24,7 @@
 #include <xapian.h>
 
 // XXX PEG parser doesn't need TOK_ types or text argument to
-// qnode_create.
+// qnode_create or next link.
 
 /**
  * Query parser AST node type.
