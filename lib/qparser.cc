@@ -116,6 +116,26 @@ qnode_list_to_string (const void *ctx, _notmuch_qnode_t *node)
     return out;
 }
 
+const char *
+_notmuch_qnode_tree_to_string (const void *ctx, _notmuch_qnode_t *node)
+{
+    if (!node) {
+	return talloc_strdup (ctx, "<nil>");
+    } else if (node->type == NODE_TERMS || node->type == NODE_QUERY) {
+	return qnode_to_string (ctx, node);
+    } else {
+	void *local = talloc_new (ctx);
+	char *out = talloc_asprintf (ctx, "(%s", qnode_to_string (local, node));
+	for (size_t i = 0; i < node->nchild; ++i)
+	    out = talloc_asprintf_append_buffer (
+		out, " %s",
+		_notmuch_qnode_tree_to_string (local, node->child[i]));
+	out = talloc_strdup_append_buffer (out, ")");
+	talloc_free (local);
+	return out;
+    }
+}
+
 /*
  * Transformation
  */
