@@ -165,6 +165,7 @@ _notmuch_qparser_make_exact_query (
  * given database prefix (a "probabilistic prefix" in Xapian lingo).
  * The text will be split into individual terms using the provided
  * TermGenerator, which can be configured for stemming and stopping.
+ * If there are no terms in text, returns Query ().
  */
 _notmuch_qnode_t *
 _notmuch_qparser_make_text_query (
@@ -201,8 +202,9 @@ _notmuch_qparser_make_text_query (
     }
 
     /* Build query */
-    // XXX Zero length?
-    if (nterms == 1)
+    if (nterms == 0)
+	node->query = Xapian::Query ();
+    else if (nterms == 1)
 	node->query = qs[0];
     else
 	node->query = Xapian::Query (Xapian::Query::OP_PHRASE,
