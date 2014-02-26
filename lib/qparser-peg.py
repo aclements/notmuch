@@ -361,8 +361,8 @@ g.rules(
     #
     # XXX Peephole optimization of removing GROUP for HATE-only terms
     group  = Node('NODE_GROUP',
-                  Many(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
-                       'loveHate')),
+                  Many1(NotLookahead(Alt(KW('and'), KW('or'), KW('not'))),
+                        'loveHate')),
     # A love prefix has no effect, since the default group operator is
     # AND anyway.  Hates are like NOTs, just with lower precedence.
     #
