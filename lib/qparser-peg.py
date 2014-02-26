@@ -147,7 +147,7 @@ struct _parse_state {
     def func(self, decl):
         # XXX Now private?
         self.__decls.append(decl + ';')
-        self(decl + ' {')
+        self(decl, '{')
         self.__indent += 1
         yield
         self.__indent -= 1
@@ -392,7 +392,7 @@ g.rules(
     # itself much like how Xapian lexes boolean terms anyway (and term
     # splitting happens later, unlike in Xapian where it happens
     # during parsing).
-    prefix    = Seq(Text(Many1(CharClass('is_wordchar(c)'))), Lit(':')),
+    prefix    = Seq(Text(Many1(CharClass('is_wordchar (c)'))), Lit(':')),
 
     # XXX Is the lexing of boolean terms compatible with the existing
     # quoting that we do for boolean terms?
@@ -427,8 +427,8 @@ g.rules(
     termText  = Text(Many(CharClass(
         "!(c == '(' || c == ')' || c == '\"' || is_whitespace (c))"))),
 
-    _ = Many(CharClass('is_whitespace(c)')),
-    __ = Alt(Many1(CharClass('is_whitespace(c)')),
+    _ = Many(CharClass('is_whitespace (c)')),
+    __ = Alt(Many1(CharClass('is_whitespace (c)')),
              Lookahead(Lit('(')),
              Lookahead(Lit(')')),
              End()))
@@ -448,20 +448,22 @@ using namespace Xapian::Unicode;
 struct _user_state {
     _notmuch_qnode_t *node;
     struct save {
-        size_t nchild;
-        save (const _user_state *u) : nchild (u->node ? u->node->nchild : 0) {}
-        void restore (_user_state *u) {
-            if (u->node)
-                u->node->nchild = nchild;
-            // XXX Free dangling children
-        }
+	size_t nchild;
+	save (const _user_state *u) : nchild (u->node ? u->node->nchild : 0) {}
+	void restore (_user_state *u)
+	{
+	    if (u->node)
+		u->node->nchild = nchild;
+	    // XXX Free dangling children
+	}
     };
 };
 ''')
 g.write_to(sys.stdout)
 print('''\
 _notmuch_qnode_t *
-_notmuch_qparser_parse (const void *ctx, const char *query) {
+_notmuch_qparser_parse (const void *ctx, const char *query)
+{
     struct _user_state user;
     _notmuch_qnode_t *result = NULL;
     /* Create a dummy root node */
