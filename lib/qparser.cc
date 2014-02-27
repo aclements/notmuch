@@ -198,7 +198,9 @@ _notmuch_qparser_make_text_query (
 	 it != end; ++it) {
 	for (pit = it.positionlist_begin (), pend = it.positionlist_end ();
 	     pit != pend; ++pit)
-	    qs[*pit - 1] = Xapian::Query (*it, 1, *pit - 1);
+	    /* XXX If termpos is only for get_terms_begin, then doing
+	     * it in each phrase is basically useless. */
+	    qs[*pit - 1] = Xapian::Query (*it, 1, *pit);
     }
 
     /* Build query */
