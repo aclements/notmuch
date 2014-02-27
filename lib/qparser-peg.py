@@ -476,7 +476,7 @@ _notmuch_qparser_parse (const void *ctx, const char *query)
 	goto DONE;
     if (user.node->nchild != 1)
 	INTERNAL_ERROR ("Wrong number of root children: %s",
-			_notmuch_qnode_tree_to_string (ctx, user.node));
+			_notmuch_qnode_to_string (ctx, user.node));
     result = talloc_steal (ctx, user.node->child[0]);
 
   DONE:

@@ -81,55 +81,26 @@ _notmuch_qnode_add_child (_notmuch_qnode_t *parent,
     parent->child[parent->nchild++] = child;
 }
 
-static const char *
-qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
+const char *
+_notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
 {
-    if ((unsigned)node->type > TOK_END)
-	return talloc_asprintf (ctx, "<bad type %d>", node->type);
-
-    if (node->type == NODE_TERMS)
+    if (! node) {
+	return talloc_strdup (ctx, "<nil>");
+    } else if (node->type == NODE_TERMS) {
 	return talloc_asprintf (ctx, "\"%s\"", node->text);
-    else if (node->type == NODE_PREFIX)
-	return talloc_asprintf (ctx, "PREFIX/%s", node->text);
-    else if (node->type == NODE_QUERY)
+    } else if (node->type == NODE_QUERY) {
 	return talloc_asprintf (ctx, "QUERY/%s",
 				node->query.get_description ().c_str () +
 				strlen ("Xapian::Query"));
-
-    return qnode_type_names[node->type];
-}
-
-__attribute__((unused))
-static char *
-qnode_list_to_string (const void *ctx, _notmuch_qnode_t *node)
-{
-    void *local = talloc_new (ctx);
-    char *out = talloc_strdup (ctx, "");
-
-    for (; node->type != TOK_END; node = node->next) {
-	const char *t = qnode_to_string (local, node);
-	out = talloc_asprintf_append_buffer (
-	    out, "%s%s", *out == 0 ? "" : " ", t);
-    }
-
-    talloc_free (local);
-    return out;
-}
-
-const char *
-_notmuch_qnode_tree_to_string (const void *ctx, _notmuch_qnode_t *node)
-{
-    if (!node) {
-	return talloc_strdup (ctx, "<nil>");
-    } else if (node->type == NODE_TERMS || node->type == NODE_QUERY) {
-	return qnode_to_string (ctx, node);
     } else {
 	void *local = talloc_new (ctx);
-	char *out = talloc_asprintf (ctx, "(%s", qnode_to_string (local, node));
+	char *out = talloc_asprintf (ctx, "(%s", qnode_type_names[node->type]);
+	if (node->text)
+	    out = talloc_asprintf_append_buffer (out, "/%s", node->text);
 	for (size_t i = 0; i < node->nchild; ++i)
 	    out = talloc_asprintf_append_buffer (
 		out, " %s",
-		_notmuch_qnode_tree_to_string (local, node->child[i]));
+		_notmuch_qnode_to_string (local, node->child[i]));
 	out = talloc_strdup_append_buffer (out, ")");
 	talloc_free (local);
 	return out;
@@ -632,7 +603,8 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	/* Fall through to the error after the switch */
 	break;
     }
-    INTERNAL_ERROR ("Illegal token %s in IR", qnode_to_string (s->local, node));
+    INTERNAL_ERROR ("Illegal qnode %s in IR",
+		    _notmuch_qnode_to_string (s->local, node));
 }
 
 Xapian::Query

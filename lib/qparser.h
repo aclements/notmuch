@@ -114,7 +114,7 @@ _notmuch_qnode_add_child (_notmuch_qnode_t *parent, _notmuch_qnode_t *child,
 			  const char **error_out);
 
 const char *
-_notmuch_qnode_tree_to_string (const void *ctx, _notmuch_qnode_t *node);
+_notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node);
 
 _notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query);
