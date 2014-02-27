@@ -18,38 +18,7 @@ import contextlib
 
 # XXX Generate useful messages on parse errors
 
-# XXX Clean up allocations better on backtrack?
-
-# XXX "/" for alt, methods for repeat, optional.  Would require
-# wrapping non-terminal references and some introspection to flatten.
-
-# XXX If actions were a separate, non-backtracking pass, would I need
-# any return values other than bool in the recognizer rules?
-
-# XXX Alternatively, I could just recursively free the node children I
-# unwind.
-
-# Simpler style: g.rule('andExpr', ...).  Don't even have to resolve
-# non-terminal names (assuming we don't need type information).  Could
-# depend on C compiler to do that.
-
-# Rather than passing around the parse state, the parse actions could
-# all be methods of a parse class that could be subclassed.  No, that
-# doesn't really help because user-provided code has to operate in
-# that subclass.
-
-# Ugh, action tree maintenance is actually really hairy.  Maybe user
-# code could just push undo actions onto an undo stack?  Seems like
-# overkill, since we really need to save only one number at the unwind
-# point and everything else can be derived.
-
-# Even if I have on-the-fly actions, I could move to a boolean-only
-# return model by putting a little more in the user state (e.g., the
-# last created Node, which would go up the tree until a Child consumed
-# it).
-
-# XXX For all but the 'frag' rule, an explicit lookahead Alt would be
-# better and might enable better error messages.
+# XXX Clean up allocations better on backtrack
 
 class PExpr:
     """Base class for PEG parsing expressions."""
@@ -400,6 +369,7 @@ g.rules(
     # Xapian ignores '(' unless preceded by whitespace, parens, +, or
     # -.  We don't discriminate.
     term      = Alt(Seq(Lit('('), Cut(), '_', 'andExpr', Lit(')'), '_'),
+                    # XXX Will often allocate node and then backtrack
                     Node('NODE_TERMS',
                          Lit('"'), Cut(), Text('quoted'), Lit('"'), '_'),
                     Seq(Node('NODE_TERMS', NotLookahead(End()),
