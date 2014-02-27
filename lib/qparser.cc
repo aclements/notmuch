@@ -547,6 +547,7 @@ generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
 		    _notmuch_qnode_create (s->local, NODE_OR, NULL, &s->error);
 		if (! conj)
 		    return NULL;
+		conj->conj_class = child->conj_class;
 		_notmuch_qnode_add_child (sub, conj, &s->error);
 		_notmuch_qnode_add_child (conj, child, &s->error);
 	    }
