@@ -353,11 +353,11 @@ g.rules(
     unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), '__', 'unaryExpr'),
                     'group'),
 
-    # A group is a sequence of possibly-loved/hated possibly-prefixed
+    # A group is a sequence of possibly-loved/hated possibly-labeled
     # terms and subqueries.  We stop consuming if we hit a bare
     # operator, but note that we intentionally accept text that looks
     # like an operator further down in the grammar if it's loved/hated
-    # or prefixed.
+    # or labeled.
     #
     # XXX Peephole optimization of removing GROUP for HATE-only terms
     group  = Node('NODE_GROUP',
@@ -378,21 +378,21 @@ g.rules(
     # another + or -, but I'm not sure why.
     loveHate  = Alt(Node('NODE_NOT', Lit('-'), Cut(), 'frag'),
                     Seq(Optional(Lit('+')), 'frag')),
-    frag      = Alt(Node('NODE_PREFIX', 'prefix', 'term'),
+    frag      = Alt(Node('NODE_LABEL', 'label', 'term'),
                     'term'),
-    # A prefix is a sequence of word characters followed by a colon.
+    # A label is a sequence of word characters followed by a colon.
     # Xapian allows anything except colon and whitespace, but
-    # restricts to registered prefixes.  Our syntax is not sensitive
-    # to the set of registered prefixes, so we're more restrictive in
-    # the accepted characters.
+    # restricts to registered labels.  Our syntax is not sensitive to
+    # the set of registered labels, so we're more restrictive in the
+    # accepted characters.
     #
-    # In Xapian, boolean prefixes dramatically affect the accepted
-    # lexical grammar of the following term.  We make no distinction;
-    # a prefix is a prefix.  This is okay because we parse the term
-    # itself much like how Xapian lexes boolean terms anyway (and term
-    # splitting happens later, unlike in Xapian where it happens
-    # during parsing).
-    prefix    = Seq(Text(Many1(CharClass('is_wordchar (c)'))), Lit(':')),
+    # In Xapian, labels for boolean prefixes dramatically affect the
+    # accepted lexical grammar of the following term.  We make no
+    # distinction; a label is a label.  This is okay because we parse
+    # the term itself much like how Xapian lexes boolean terms anyway
+    # (and term splitting happens later, unlike in Xapian where it
+    # happens during parsing).
+    label     = Seq(Text(Many1(CharClass('is_wordchar (c)'))), Lit(':')),
 
     # XXX Is the lexing of boolean terms compatible with the existing
     # quoting that we do for boolean terms?

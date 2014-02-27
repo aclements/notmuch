@@ -44,10 +44,10 @@ enum _notmuch_qnode_type
      * converts (AND x (NOT y)) into (x AND_NOT y) and other
      * occurrences of (NOT x) into (<all> AND_NOT x).
      *
-     * For NODE_PREFIX, the text field specifies the prefix (sans
-     * colon).  The child of NODE_PREFIX may be a term or a sub-query.
+     * For NODE_LABEL, the text field specifies the label (sans
+     * colon).  The child of NODE_LABEL may be a term or a sub-query.
      */
-    NODE_NOT, NODE_PREFIX,
+    NODE_NOT, NODE_LABEL,
     /* A group of space-separated queries.  These appear only in the
      * parser output and never in the lexer output.  At a syntactic
      * level, a group is the stuff between boolean operators.  It's
@@ -80,8 +80,8 @@ typedef struct _notmuch_qnode
 {
     enum _notmuch_qnode_type type;
 
-    /* For NODE_PREFIX, the query prefix of this token.  For
-     * NODE_TERMS, the literal text from the query. */
+    /* For NODE_LABEL, the query label of this token.  For NODE_TERMS,
+     * the literal text from the query. */
     const char *text;
 
     /* For NODE_QUERY, the Xapian query for this node.  (For other
@@ -120,20 +120,20 @@ _notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query);
 
 /**
- * Transform all terms that have the given prefix into literal
- * queries.  If exclusive is true, then all terms with this prefix in
- * the same group will be OR'd (rather than the default AND).
+ * Transform all terms that have the given label into literal queries.
+ * If exclusive is true, then all terms with this label in the same
+ * group will be OR'd (rather than the default AND).
  */
 _notmuch_qnode_t *
-_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *prefix,
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
 				 const char *db_prefix, bool exclusive,
 				 const char **error_out);
 
 /**
- * Transform all terms that have the given prefix into text queries.
+ * Transform all terms that have the given label into text queries.
  */
 _notmuch_qnode_t *
-_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
+_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
 			      const char *db_prefix, Xapian::TermGenerator tgen,
 			      const char **error_out);
 
@@ -142,8 +142,8 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
  *
  * Any NODE_TERMS remaining in the AST will be parsed into a text
  * query using the provided term generator.  If the AST contains any
- * NODE_PREFIX nodes, an "unknown prefix" error will be reported;
- * callers should eliminate all known prefixes during transformation.
+ * NODE_LABEL nodes, an "unknown label" error will be reported;
+ * callers should eliminate all known labels during transformation.
  *
  * If there's an error, this returns an empty Query and sets
  * *error_out to the error if *error_out is NULL.  The error will

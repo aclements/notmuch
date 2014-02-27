@@ -27,7 +27,7 @@ using Xapian::Unicode::is_wordchar;
 static const char *qnode_type_names[] = {
     "LOVE", "HATE", "BRA", "KET",
     "AND", "OR",
-    "NOT", "PREFIX",
+    "NOT", "LABEL",
     "GROUP",
     "TERMS", "QUERY", "END"
 };
@@ -186,60 +186,60 @@ _notmuch_qparser_make_text_query (
 }
 
 /**
- * A prefix transformer callback, which will be passed a NODE_TERMS
- * token to which the desired prefix applies.  This must either return
+ * A label transformer callback, which will be passed a NODE_TERMS
+ * token to which the desired label applies.  This must either return
  * a transformed token, or return NULL and set *error_out to an error
  * message.
  */
-typedef _notmuch_qnode_t *_notmuch_qparser_prefix_transformer (
+typedef _notmuch_qnode_t *_notmuch_qparser_label_transformer (
     _notmuch_qnode_t *terms, void *opaque, const char **error_out);
 
-struct _prefix_transform_state
+struct _label_transform_state
 {
-    const char *prefix;
-    _notmuch_qparser_prefix_transformer *cb;
+    const char *label;
+    _notmuch_qparser_label_transformer *cb;
     void *opaque;
     const char **error_out;
 };
 
 static _notmuch_qnode_t *
-prefix_transform_rec (struct _prefix_transform_state *s, _notmuch_qnode_t *node,
-		      bool active)
+label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
+		     bool active)
 {
     if (*s->error_out)
 	return node;
-    /* XXX Should it be an error to have clashing prefixes?  E.g.,
+    /* XXX Should it be an error to have clashing labels?  E.g.,
      * foo:(bar:x)? */
-    if (node->type == NODE_PREFIX)
-	active = (strcmp (node->text, s->prefix) == 0);
+    if (node->type == NODE_LABEL)
+	active = (strcmp (node->text, s->label) == 0);
     else if (active && node->type == NODE_TERMS)
 	return s->cb (node, s->opaque, s->error_out);
     for (size_t i = 0; i < node->nchild; i++)
-	node->child[i] = prefix_transform_rec (s, node->child[i], active);
-    if (active && node->type == NODE_PREFIX)
+	node->child[i] = label_transform_rec (s, node->child[i], active);
+    if (active && node->type == NODE_LABEL)
 	return node->child[0];
     return node;
 }
 
 /**
- * Transform all terms that have the given prefix in the query rooted
+ * Transform all terms that have the given label in the query rooted
  * at node using the provided transformer.  In effect, this finds all
- * NODE_TERMS tokens in sub-queries under the given prefix, invokes the
- * callback for all these NODE_TERMS tokens, and strips the prefix
+ * NODE_TERMS tokens in sub-queries under the given label, invokes the
+ * callback for all these NODE_TERMS tokens, and strips the label
  * token itself from the query.
  */
 _notmuch_qnode_t *
-_notmuch_qparser_prefix_transform (_notmuch_qnode_t *node, const char *prefix,
-				   _notmuch_qparser_prefix_transformer *cb,
-				   void *opaque, const char **error_out)
+_notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
+				  _notmuch_qparser_label_transformer *cb,
+				  void *opaque, const char **error_out)
 {
-    struct _prefix_transform_state state = {prefix, cb, opaque, error_out};
-    return prefix_transform_rec (&state, node, false);
+    struct _label_transform_state state = {label, cb, opaque, error_out};
+    return label_transform_rec (&state, node, false);
 }
 
 struct _literal_prefix_state
 {
-    const char *prefix, *db_prefix;
+    const char *label, *db_prefix;
     bool exclusive;
 };
 
@@ -250,23 +250,23 @@ literal_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out
     _notmuch_qnode_t *q = _notmuch_qparser_make_literal_query (
 	terms, terms->text, state->db_prefix, error_out);
     if (state->exclusive && q)
-	q->conj_class = state->prefix;
+	q->conj_class = state->label;
     return q;
 }
 
 _notmuch_qnode_t *
-_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *prefix,
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
 				 const char *db_prefix, bool exclusive,
 				 const char **error_out)
 {
-    struct _literal_prefix_state state = {prefix, db_prefix, exclusive};
-    return _notmuch_qparser_prefix_transform (node, prefix, literal_prefix_cb,
-					      &state, error_out);
+    struct _literal_prefix_state state = {label, db_prefix, exclusive};
+    return _notmuch_qparser_label_transform (node, label, literal_prefix_cb,
+					     &state, error_out);
 }
 
 struct _text_prefix_state
 {
-    const char *prefix, *db_prefix;
+    const char *label, *db_prefix;
     Xapian::TermGenerator tgen;
 };
 
@@ -279,13 +279,13 @@ text_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
 }
 
 _notmuch_qnode_t *
-_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
+_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
 			      const char *db_prefix, Xapian::TermGenerator tgen,
 			      const char **error_out)
 {
-    struct _text_prefix_state state = {prefix, db_prefix, tgen};
-    return _notmuch_qparser_prefix_transform (node, prefix, text_prefix_cb,
-					      &state, error_out);
+    struct _text_prefix_state state = {label, db_prefix, tgen};
+    return _notmuch_qparser_label_transform (node, label, text_prefix_cb,
+					     &state, error_out);
 }
 
 
@@ -575,11 +575,11 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	    return l;
 	return Query (Query::OP_AND_NOT, Query::MatchAll, l);
 
-    case NODE_PREFIX:
-	/* Transformers have stripped out all known prefixes. */
+    case NODE_LABEL:
+	/* Transformers have stripped out all known labels. */
 	if (! s->error)
 	    s->error = talloc_asprintf (
-		s->ctx, "Unknown prefix '%s' in query", node->text);
+		s->ctx, "Unknown label '%s' in query", node->text);
 	return Query ();
 
     case NODE_GROUP:
@@ -591,7 +591,7 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	return generate (s, generate_group (s, node));
 
     case NODE_TERMS:
-	/* Terms that weren't prefixed are treated as regular text
+	/* Terms that weren't labeled are treated as regular text
 	 * queries. */
 	return _notmuch_qparser_make_text_query (
 	    s->local, node->text, NULL, s->tgen, &s->error)->query;
