@@ -88,12 +88,13 @@ qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
 	return talloc_asprintf (ctx, "<bad type %d>", node->type);
 
     if (node->type == NODE_TERMS)
-	return talloc_asprintf (ctx, "TERMS/\"%s\"", node->text);
+	return talloc_asprintf (ctx, "\"%s\"", node->text);
     else if (node->type == NODE_PREFIX)
 	return talloc_asprintf (ctx, "PREFIX/%s", node->text);
     else if (node->type == NODE_QUERY)
 	return talloc_asprintf (ctx, "QUERY/%s",
-				node->query.get_description ().c_str ());
+				node->query.get_description ().c_str () +
+				strlen ("Xapian::Query"));
 
     return qnode_type_names[node->type];
 }
