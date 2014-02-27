@@ -77,6 +77,7 @@ static void
 test_one (void *ctx, const char *query_str)
 {
     void *local = talloc_new (ctx);
+    Xapian::TermGenerator tgen;
     Xapian::Query q;
     _notmuch_qnode_t *root;
     const char *error;
@@ -88,10 +89,12 @@ test_one (void *ctx, const char *query_str)
     root = _notmuch_qparser_parse (local, query_str);
     printf("[parse]  %s\n", _notmuch_qnode_tree_to_string (local, root));
 
-    // root = _notmuch_qparser_transform (qparser, root);
-
-    Xapian::TermGenerator tgen;
     error = NULL;
+    root = _notmuch_qparser_text_prefix (root, "text", "T", tgen, &error);
+    root = _notmuch_qparser_literal_prefix (root, "lit", "L", false, &error);
+    root = _notmuch_qparser_literal_prefix (root, "litex", "E", true, &error);
+    /* printf("[xform]  %s\n", _notmuch_qnode_tree_to_string (local, root)); */
+
     q = _notmuch_qparser_generate (local, root, tgen, &error);
     if (error)
 	qparser_desc = talloc_asprintf (local, "error: %s", error);
@@ -133,9 +136,9 @@ create_xapian_qparser (void)
 {
     Xapian::QueryParser xq;
     xq.set_default_op (Xapian::Query::OP_AND);
-    xq.add_prefix ("prob", "P");
+    xq.add_prefix ("text", "T");
     xq.add_boolean_prefix ("lit", "L");
-    xq.add_boolean_prefix ("tag", "K");
+    xq.add_boolean_prefix ("litex", "E");
     return xq;
 }
 
