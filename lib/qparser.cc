@@ -497,10 +497,45 @@ _notmuch_qparser_exact_prefix (_notmuch_qnode_t *node, const char *prefix,
 
 struct _generate_state
 {
-    const void *ctx;
+    const void *ctx, *local;
     Xapian::TermGenerator tgen;
-    const char **error_out;
+    const char *error;
 };
+
+static _notmuch_qnode_t *
+generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
+{
+    /* Turn the group into a NODE_AND, but with children in the same
+     * conjunction class OR'd. */
+    _notmuch_qnode_t *sub =
+	_notmuch_qnode_create (s->local, NODE_AND, NULL, &s->error);
+    if (! sub)
+	return NULL;
+    for (size_t i = 0; i < node->nchild; ++i) {
+	_notmuch_qnode_t *child = node->child[i];
+	if (! child->conj_class) {
+	    _notmuch_qnode_add_child (sub, child, &s->error);
+	} else {
+	    size_t j;
+	    for (j = 0; j < sub->nchild; ++j) {
+		if (sub->child[j]->conj_class &&
+		    strcmp (child->conj_class, sub->child[j]->conj_class) == 0) {
+		    _notmuch_qnode_add_child (sub->child[j], child, &s->error);
+		    break;
+		}
+	    }
+	    if (j == sub->nchild) {
+		_notmuch_qnode_t *conj =
+		    _notmuch_qnode_create (s->local, NODE_OR, NULL, &s->error);
+		if (! conj)
+		    return NULL;
+		_notmuch_qnode_add_child (sub, conj, &s->error);
+		_notmuch_qnode_add_child (conj, child, &s->error);
+	    }
+	}
+    }
+    return sub;
+}
 
 static Xapian::Query
 generate (struct _generate_state *s, _notmuch_qnode_t *node)
@@ -508,9 +543,13 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
     using Xapian::Query;
     Query l, r;
 
-    if (s->error_out)
+    if (s->error)
 	return Query ();
+    if (! node)
+	INTERNAL_ERROR ("NULL node in qparser AST");
 
+    /* Translate this node to a query.  Be careful because any
+     * recursive generate call can return an empty query. */
     switch (node->type) {
     case NODE_AND:
 	for (size_t i = 0; i < node->nchild; ++i) {
@@ -542,27 +581,30 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	if (node->child[0]->type == NODE_NOT)
 	    return generate (s, node->child[0]->child[0]);
 	l = generate (s, node->child[0]);
+	if (l.empty ())
+	    return l;
 	return Query (Query::OP_AND_NOT, Query::MatchAll, l);
 
     case NODE_PREFIX:
 	/* Transformers have stripped out all known prefixes. */
-	if (! *s->error_out)
-	    *s->error_out = talloc_asprintf (
+	if (! s->error)
+	    s->error = talloc_asprintf (
 		s->ctx, "Unknown prefix '%s' in query", node->text);
 	return Query ();
 
     case NODE_GROUP:
-	/* XXX */
-	/* XXX Return exclusiveness and boolean-ness of term from
-	 * generate so they can be combined here? */
-	break;
+	/* XXX Currently we don't distinguish weighted and
+	 * non-weighted parts of the query.  Xapian uses FILTER or
+	 * SCALE_WEIGHT*0 for any boolean-prefixed terms in a prob.
+	 * We should do this, too, but should probably handle it
+	 * generically in NODE_AND. */
+	return generate (s, generate_group (s, node));
 
     case NODE_TERMS:
 	/* Terms that weren't prefixed are treated as regular text
 	 * queries. */
-	/* XXX Need to deal with zero length queries */
 	return _notmuch_qparser_make_text_query (
-	    s->ctx, node->text, NULL, s->tgen, s->error_out)->query;
+	    s->local, node->text, NULL, s->tgen, &s->error)->query;
 
     case NODE_QUERY:
 	return node->query;
@@ -571,5 +613,22 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	/* Fall through to the error after the switch */
 	break;
     }
-    INTERNAL_ERROR ("Illegal token %s in IR", qnode_to_string (s->ctx, node));
+    INTERNAL_ERROR ("Illegal token %s in IR", qnode_to_string (s->local, node));
+}
+
+Xapian::Query
+_notmuch_qparser_generate (const void *ctx, _notmuch_qnode_t *root,
+			   Xapian::TermGenerator tgen,
+			   const char **error_out)
+{
+    void *local = talloc_new (ctx);
+    struct _generate_state state = {ctx, local, tgen, NULL};
+    Xapian::Query query = generate (&state, root);
+    talloc_free (local);
+    if (state.error) {
+	if (! *error_out)
+	    *error_out = state.error;
+	return Xapian::Query ();
+    }
+    return query;
 }

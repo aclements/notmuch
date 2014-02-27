@@ -50,9 +50,9 @@ enum _notmuch_qnode_type
     NODE_NOT, NODE_PREFIX,
     /* A group of space-separated queries.  These appear only in the
      * parser output and never in the lexer output.  At a syntactic
-     * level, a group is the stuff between boolean operators.  Its
-     * children are terms, prefixed terms, and sub-queries.  (Xapian
-     * calls this a "prob". */
+     * level, a group is the stuff between boolean operators.  It's
+     * equivalent to NODE_AND except that children with the same
+     * conjunction class are OR'd.  (Xapian calls this a "prob".) */
     NODE_GROUP,
     /* Search terms.  This can represent a single term, a quoted
      * phrase, or an implicit phrase.  An implicit phrase is something
@@ -118,6 +118,23 @@ _notmuch_qnode_tree_to_string (const void *ctx, _notmuch_qnode_t *node);
 
 _notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query);
+
+/**
+ * Generate a Xapian Query from a qparser AST.
+ *
+ * Any NODE_TERMS remaining in the AST will be parsed into a text
+ * query using the provided term generator.  If the AST contains any
+ * NODE_PREFIX nodes, an "unknown prefix" error will be reported;
+ * callers should eliminate all known prefixes during transformation.
+ *
+ * If there's an error, this returns an empty Query and sets
+ * *error_out to the error if *error_out is NULL.  The error will
+ * either be a static string or allocated in ctx.
+ */
+Xapian::Query
+_notmuch_qparser_generate (const void *ctx, _notmuch_qnode_t *root,
+			   Xapian::TermGenerator tgen,
+			   const char **error_out);
 
 #pragma GCC visibility pop
 
