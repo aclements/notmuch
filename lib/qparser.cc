@@ -21,6 +21,9 @@
 #include "qparser.h"
 #include "notmuch-private.h"
 
+// XXX Stemming
+// XXX Wildcards
+
 using Xapian::Unicode::is_whitespace;
 using Xapian::Unicode::is_wordchar;
 
@@ -612,6 +615,8 @@ _notmuch_qparser_generate (const void *ctx, _notmuch_qnode_t *root,
 			   Xapian::TermGenerator tgen,
 			   const char **error_out)
 {
+    // XXX I should either clear *error_out, or I should bail
+    // immediately if *error_out.
     void *local = talloc_new (ctx);
     struct _generate_state state = {ctx, local, tgen, NULL};
     Xapian::Query query = generate (&state, root);
