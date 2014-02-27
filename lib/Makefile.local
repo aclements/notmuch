@@ -71,7 +71,7 @@ libnotmuch_cxx_srcs =		\
 	$(dir)/query.cc		\
 	$(dir)/thread.cc	\
 	$(dir)/qparser.cc	\
-	$(dir)/qparser-peg.cc
+	$(dir)/qparser-rd-lex.cc
 
 $(dir)/qparser-peg.cc: $(dir)/qparser-peg.py
 	python3 $< > $@
