@@ -432,7 +432,8 @@ struct _user_state {
 g.write_to(sys.stdout)
 print('''\
 _notmuch_qnode_t *
-_notmuch_qparser_parse (const void *ctx, const char *query)
+_notmuch_qparser_parse (const void *ctx, const char *query,
+			const char **error_out)
 {
     struct _user_state user;
     _notmuch_qnode_t *result = NULL;

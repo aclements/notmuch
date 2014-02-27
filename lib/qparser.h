@@ -117,7 +117,8 @@ const char *
 _notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node);
 
 _notmuch_qnode_t *
-_notmuch_qparser_parse (const void *ctx, const char *query);
+_notmuch_qparser_parse (const void *ctx, const char *query,
+			const char **error_out);
 
 /**
  * Transform all terms that have the given label into literal queries.
