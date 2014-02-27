@@ -140,11 +140,11 @@ _notmuch_qnode_tree_to_string (const void *ctx, _notmuch_qnode_t *node)
  */
 
 /**
- * Return a query that matches a single, exact term with the given
+ * Return a query that matches a single, literal term with the given
  * text and database prefix (a "boolean prefix" in Xapian lingo).
  */
 _notmuch_qnode_t *
-_notmuch_qparser_make_exact_query (
+_notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
     const char **error_out)
 {
@@ -289,35 +289,30 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
 					      &state, error_out);
 }
 
-struct _exact_prefix_state
+struct _literal_prefix_state
 {
     const char *prefix, *db_prefix;
     bool exclusive;
 };
 
 static _notmuch_qnode_t *
-exact_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
+literal_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
 {
-    struct _exact_prefix_state *state = (struct _exact_prefix_state*)opaque;
-    _notmuch_qnode_t *q = _notmuch_qparser_make_exact_query (
+    struct _literal_prefix_state *state = (struct _literal_prefix_state*)opaque;
+    _notmuch_qnode_t *q = _notmuch_qparser_make_literal_query (
 	terms, terms->text, state->db_prefix, error_out);
     if (state->exclusive && q)
 	q->conj_class = state->prefix;
     return q;
 }
 
-/**
- * Transform all terms that have the given prefix into exact queries.
- * If exclusive is true, then all terms with this prefix in the same
- * group will be OR'd (rather than the default AND).
- */
 _notmuch_qnode_t *
-_notmuch_qparser_exact_prefix (_notmuch_qnode_t *node, const char *prefix,
-			       const char *db_prefix, bool exclusive,
-			       const char **error_out)
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *prefix,
+				 const char *db_prefix, bool exclusive,
+				 const char **error_out)
 {
-    struct _exact_prefix_state state = {prefix, db_prefix, exclusive};
-    return _notmuch_qparser_prefix_transform (node, prefix, exact_prefix_cb,
+    struct _literal_prefix_state state = {prefix, db_prefix, exclusive};
+    return _notmuch_qparser_prefix_transform (node, prefix, literal_prefix_cb,
 					      &state, error_out);
 }
 

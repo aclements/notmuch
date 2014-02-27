@@ -128,6 +128,16 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
 			      const char **error_out);
 
 /**
+ * Transform all terms that have the given prefix into literal
+ * queries.  If exclusive is true, then all terms with this prefix in
+ * the same group will be OR'd (rather than the default AND).
+ */
+_notmuch_qnode_t *
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *prefix,
+				 const char *db_prefix, bool exclusive,
+				 const char **error_out)
+
+/**
  * Generate a Xapian Query from a qparser AST.
  *
  * Any NODE_TERMS remaining in the AST will be parsed into a text
