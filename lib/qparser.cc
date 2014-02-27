@@ -311,7 +311,7 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
 			      const char *db_prefix, Xapian::TermGenerator tgen,
 			      const char **error_out)
 {
-    struct _text_prefix_state = {prefix, db_prefix, tgen};
+    struct _text_prefix_state state = {prefix, db_prefix, tgen};
     return _notmuch_qparser_prefix_transform (node, prefix, text_prefix_cb,
 					      &state, error_out);
 }

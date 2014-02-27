@@ -127,7 +127,7 @@ _notmuch_qparser_parse (const void *ctx, const char *query);
 _notmuch_qnode_t *
 _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *prefix,
 				 const char *db_prefix, bool exclusive,
-				 const char **error_out)
+				 const char **error_out);
 
 /**
  * Transform all terms that have the given prefix into text queries.
