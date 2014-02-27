@@ -87,13 +87,13 @@ test_one (void *ctx, const char *query_str)
     // printf("[lex]    %s\n", _notmuch_token_show_list (local, toks));
 
     root = _notmuch_qparser_parse (local, query_str);
-    printf("[parse]  %s\n", _notmuch_qnode_tree_to_string (local, root));
+    printf("[parse]  %s\n", _notmuch_qnode_to_string (local, root));
 
     error = NULL;
     root = _notmuch_qparser_text_prefix (root, "text", "T", tgen, &error);
     root = _notmuch_qparser_literal_prefix (root, "lit", "L", false, &error);
     root = _notmuch_qparser_literal_prefix (root, "litex", "E", true, &error);
-    /* printf("[xform]  %s\n", _notmuch_qnode_tree_to_string (local, root)); */
+    /* printf("[xform]  %s\n", _notmuch_qnode_to_string (local, root)); */
 
     q = _notmuch_qparser_generate (local, root, tgen, &error);
     if (error)
