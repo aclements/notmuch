@@ -46,7 +46,7 @@ _notmuch_qnode_create (const void *ctx, enum _notmuch_qnode_type type,
     _notmuch_qnode_t *node = talloc (ctx, _notmuch_qnode_t);
     if (! node) {
 	if (! *error_out)
-	    *error_out = "Out of memory allocating token";
+	    *error_out = "Out of memory allocating qnode";
 	return NULL;
     }
     node->type = type;
@@ -73,7 +73,7 @@ _notmuch_qnode_add_child (_notmuch_qnode_t *parent,
 			    new_count);
 	if (! new_child) {
 	    if (! *error_out)
-		*error_out = "Out of memory allocating child token array";
+		*error_out = "Out of memory allocating child qnode array";
 	    return;
 	}
 	parent->child = new_child;
