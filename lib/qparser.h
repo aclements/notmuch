@@ -120,6 +120,14 @@ _notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query);
 
 /**
+ * Transform all terms that have the given prefix into text queries.
+ */
+_notmuch_qnode_t *
+_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *prefix,
+			      const char *db_prefix, Xapian::TermGenerator tgen,
+			      const char **error_out);
+
+/**
  * Generate a Xapian Query from a qparser AST.
  *
  * Any NODE_TERMS remaining in the AST will be parsed into a text
