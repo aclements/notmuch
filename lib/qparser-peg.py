@@ -319,7 +319,8 @@ g.rules(
                      promote_unit=True),
     orExpr    = Node('NODE_OR', 'unaryExpr', Many(KW('or'), 'unaryExpr'),
                      promote_unit=True),
-    unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), '__', 'unaryExpr'),
+    # XXX Will often allocate node and then backtrack
+    unaryExpr = Alt(Node('NODE_NOT', KW('not'), Cut(), 'unaryExpr'),
                     'group'),
 
     # A group is a sequence of possibly-loved/hated possibly-labeled
@@ -372,8 +373,7 @@ g.rules(
                     # XXX Will often allocate node and then backtrack
                     Node('NODE_TERMS',
                          Lit('"'), Cut(), Text('quoted'), Lit('"'), '_'),
-                    Seq(Node('NODE_TERMS', NotLookahead(End()),
-                             'termText', '__'))),
+                    Seq(Node('NODE_TERMS', 'termText', '__'))),
     # Quotes in a quoted phrase can be escaped by doubling them.
     # Xapian distinguishes between regular phrases that have no way to
     # escape quotes and boolean terms, where quotes are escaped, but
@@ -383,9 +383,8 @@ g.rules(
     # term generator will discard them.
     # XXX Unescape
     quoted    = Many(Alt(CharClass('c != \'"\''), Lit('""'))),
-    # Consume a (possibly empty) term up to the next (, ), ", or
-    # whitespace.  We'll word-split this much later, during
-    # generation.
+    # Consume a term up to the next (, ), ", or whitespace.  We'll
+    # word-split this much later, during generation.
     #
     # Xapian permits other characters to separate term phrases.  For
     # example, "x#y" is parsed as two separate (non-phrase) terms.
@@ -394,7 +393,7 @@ g.rules(
     # this is very hard.  Here we take a simpler approach where only
     # whitespace and a few operator characters that are never term
     # characters separate terms.
-    termText  = Text(Many(CharClass(
+    termText  = Text(Many1(CharClass(
         "!(c == '(' || c == ')' || c == '\"' || is_whitespace (c))"))),
 
     _ = Many(CharClass('is_whitespace (c)')),
