@@ -40,19 +40,16 @@ qnode_destructor (_notmuch_qnode_t *tok)
 
 _notmuch_qnode_t *
 _notmuch_qnode_create (const void *ctx, enum _notmuch_qnode_type type,
-		       const char *text, const char **error_out)
+		       const char **error_out)
 {
-    _notmuch_qnode_t *node = talloc (ctx, _notmuch_qnode_t);
+    _notmuch_qnode_t *node = talloc_zero (ctx, _notmuch_qnode_t);
     if (! node) {
 	if (! *error_out)
 	    *error_out = "Out of memory allocating qnode";
 	return NULL;
     }
     node->type = type;
-    node->text = text;
     new (&node->query) Xapian::Query();
-    node->nchild = 0;
-    node->child = NULL;
     talloc_set_destructor (node, qnode_destructor);
     return node;
 }
@@ -118,8 +115,7 @@ _notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
     const char **error_out)
 {
-    _notmuch_qnode_t *node =
-	_notmuch_qnode_create (ctx, NODE_QUERY, NULL, error_out);
+    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
     if (! node)
 	return NULL;
     std::string db_term (db_prefix);
@@ -142,8 +138,7 @@ _notmuch_qparser_make_text_query (
     const void *ctx, const char *text, const char *db_prefix,
     Xapian::TermGenerator tgen, const char **error_out)
 {
-    _notmuch_qnode_t *node =
-	_notmuch_qnode_create (ctx, NODE_QUERY, NULL, error_out);
+    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
     if (! node)
 	return NULL;
 
@@ -495,7 +490,7 @@ generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
     /* Turn the group into a NODE_AND, but with children in the same
      * conjunction class OR'd. */
     _notmuch_qnode_t *sub =
-	_notmuch_qnode_create (s->local, NODE_AND, NULL, &s->error);
+	_notmuch_qnode_create (s->local, NODE_AND, &s->error);
     if (! sub)
 	return NULL;
     for (size_t i = 0; i < node->nchild; ++i) {
@@ -513,7 +508,7 @@ generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
 	    }
 	    if (j == sub->nchild) {
 		_notmuch_qnode_t *conj =
-		    _notmuch_qnode_create (s->local, NODE_OR, NULL, &s->error);
+		    _notmuch_qnode_create (s->local, NODE_OR, &s->error);
 		if (! conj)
 		    return NULL;
 		conj->conj_class = child->conj_class;

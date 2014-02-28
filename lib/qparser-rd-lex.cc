@@ -114,7 +114,7 @@ parse_quoted (struct _parse_state *s)
 
     /* Create node */
     _notmuch_qnode_t *node =
-	_notmuch_qnode_create (s->ctx, NODE_TERMS, NULL, &s->error);
+	_notmuch_qnode_create (s->ctx, NODE_TERMS, &s->error);
     if (! node)
 	return NULL;
     char *dst = talloc_array (node, char, pos.raw () - s->pos.raw () + 1);
@@ -179,7 +179,7 @@ parse_term (struct _parse_state *s)
 	++pos;
     if (pos == s->pos)
 	return parse_fail (s, "Search term expected");
-    node = _notmuch_qnode_create (s->ctx, NODE_TERMS, NULL, &s->error);
+    node = _notmuch_qnode_create (s->ctx, NODE_TERMS, &s->error);
     if (! node)
 	return NULL;
     node->text =
@@ -215,10 +215,14 @@ parse_label (struct _parse_state *s)
 	++pos;
     if (pos == s->pos || pos == s->end || *pos != ':')
 	return NULL;
-    char *text = talloc_strndup (s->ctx, s->pos.raw (),
-				 pos.raw () - s->pos.raw ());
     _notmuch_qnode_t *label =
-	_notmuch_qnode_create (s->ctx, NODE_LABEL, text, &s->error);
+	_notmuch_qnode_create (s->ctx, NODE_LABEL, &s->error);
+    if (! label)
+	return NULL;
+    label->text =
+	talloc_strndup (s->ctx, s->pos.raw (), pos.raw () - s->pos.raw ());
+    if (! label->text)
+	return parse_fail (s, "Out of memory allocating label");
     s->pos = ++pos;
     return label;
 }
@@ -231,7 +235,7 @@ parse_group (struct _parse_state *s)
 {
     bool done = false;
     _notmuch_qnode_t *group, *sub, *node;
-    group = _notmuch_qnode_create (s->ctx, NODE_GROUP, NULL, &s->error);
+    group = _notmuch_qnode_create (s->ctx, NODE_GROUP, &s->error);
     if (! group)
 	return NULL;
     while (! done && ! s->error) {
@@ -257,7 +261,7 @@ parse_group (struct _parse_state *s)
 	     * as "x AND NOT y z", which causes *both* y and z to be
 	     * negated, rather than just y.  We don't special case
 	     * this. */
-	    node = _notmuch_qnode_create (s->ctx, NODE_NOT, NULL, &s->error);
+	    node = _notmuch_qnode_create (s->ctx, NODE_NOT, &s->error);
 	    if (! node)
 		return NULL;
 	    _notmuch_qnode_add_child (sub, node, &s->error);
@@ -295,7 +299,7 @@ parse_unary_op (struct _parse_state *s)
 {
     if (parse_kw (s, "not")) {
 	_notmuch_qnode_t *sub =
-	    _notmuch_qnode_create (s->ctx, NODE_NOT, NULL, &s->error);
+	    _notmuch_qnode_create (s->ctx, NODE_NOT, &s->error);
 	if (sub)
 	    _notmuch_qnode_add_child (sub, parse_unary_op (s), &s->error);
 	return sub;
@@ -319,7 +323,7 @@ parse_binary_op (struct _parse_state *s, int prec)
 			  (prec == 1 && parse_kw (s, "and")))) {
 	if (! op) {
 	    op = _notmuch_qnode_create (s->ctx, prec == 0 ? NODE_OR : NODE_AND,
-					NULL, &s->error);
+					&s->error);
 	    if (! op)
 		return NULL;
 	    _notmuch_qnode_add_child (op, left, &s->error);

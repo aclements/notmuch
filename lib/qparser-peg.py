@@ -280,7 +280,7 @@ class Node(AutoSeq):
         self.__typ, self.__promote_unit = typ, promote_unit
     def gen_c(self, g):
         g('_notmuch_qnode_t *parent = s->user->node,',
-          '    *node = _notmuch_qnode_create (parent, %s, NULL, NULL);' % self.__typ,
+          '    *node = _notmuch_qnode_create (parent, %s, NULL);' % self.__typ,
           # XXX Handle allocation failure
           's->user->node = node;',
           'bool result = %s;' % g.call(self._production),
@@ -438,7 +438,7 @@ _notmuch_qparser_parse (const void *ctx, const char *query,
     _notmuch_qnode_t *result = NULL;
     /* Create a dummy root node */
     /* XXX error_out */
-    user.node = _notmuch_qnode_create (ctx, NODE_AND, NULL, NULL);
+    user.node = _notmuch_qnode_create (ctx, NODE_AND, NULL);
     if (! user.node)
 	return NULL;
     /* XXX Will need error message stuff */

@@ -23,9 +23,6 @@
 
 #include <xapian.h>
 
-// XXX PEG parser doesn't need TOK_ types or text argument to
-// qnode_create or next link.
-
 /**
  * Query parser AST node type.
  *
@@ -96,7 +93,7 @@ typedef struct _notmuch_qnode
 
 _notmuch_qnode_t *
 _notmuch_qnode_create (const void *ctx, enum _notmuch_qnode_type type,
-		       const char *text, const char **error_out);
+		       const char **error_out);
 
 void
 _notmuch_qnode_add_child (_notmuch_qnode_t *parent, _notmuch_qnode_t *child,
