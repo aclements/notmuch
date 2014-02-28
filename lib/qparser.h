@@ -33,9 +33,6 @@
  */
 enum _notmuch_qnode_type
 {
-    /* The first four token types appear only in the lexer output and
-     * never in the parse tree. */
-    TOK_LOVE, TOK_HATE, TOK_BRA, TOK_KET,
     /* Binary operators.  These have two or more children. */
     NODE_AND, NODE_OR,
     /* Unary operators.  These have one child.
@@ -48,11 +45,10 @@ enum _notmuch_qnode_type
      * colon).  The child of NODE_LABEL may be a term or a sub-query.
      */
     NODE_NOT, NODE_LABEL,
-    /* A group of space-separated queries.  These appear only in the
-     * parser output and never in the lexer output.  At a syntactic
-     * level, a group is the stuff between boolean operators.  It's
-     * equivalent to NODE_AND except that children with the same
-     * conjunction class are OR'd.  (Xapian calls this a "prob".) */
+    /* A group of space-separated queries.  Syntactically, a group is
+     * the stuff between boolean operators.  It's equivalent to
+     * NODE_AND except that children with the same conjunction class
+     * are OR'd.  (Xapian calls this a "prob".) */
     NODE_GROUP,
     /* Search terms.  This can represent a single term, a quoted
      * phrase, or an implicit phrase.  An implicit phrase is something
@@ -67,10 +63,6 @@ enum _notmuch_qnode_type
     /* A "compiled" Xapian query.  These are produced by
      * transformations when they compile parts of a query AST. */
     NODE_QUERY,
-    /* TOK_END indicates the end of the token list.  Such tokens loop
-     * back on themselves so it's always safe to follow "next".
-     * These appear only in the lexer output. */
-    TOK_END,
 };
 
 /**
@@ -94,9 +86,6 @@ typedef struct _notmuch_qnode
      * Children with identical non-NULL conjunction classes will be
      * OR'd together (and these, in turn, AND'd). */
     const char *conj_class;
-
-    /* Link in the lexer token list. */
-    struct _notmuch_qnode *next;
 
     /* Links to children in the intermediate AST. */
     size_t nchild;

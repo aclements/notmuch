@@ -28,11 +28,7 @@ using Xapian::Unicode::is_whitespace;
 using Xapian::Unicode::is_wordchar;
 
 static const char *qnode_type_names[] = {
-    "LOVE", "HATE", "BRA", "KET",
-    "AND", "OR",
-    "NOT", "LABEL",
-    "GROUP",
-    "TERMS", "QUERY", "END"
+    "AND", "OR", "NOT", "LABEL", "GROUP", "TERMS", "QUERY",
 };
 
 static int
@@ -55,7 +51,6 @@ _notmuch_qnode_create (const void *ctx, enum _notmuch_qnode_type type,
     node->type = type;
     node->text = text;
     new (&node->query) Xapian::Query();
-    node->next = NULL;
     node->nchild = 0;
     node->child = NULL;
     talloc_set_destructor (node, qnode_destructor);
@@ -601,10 +596,6 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 
     case NODE_QUERY:
 	return node->query;
-
-    case TOK_LOVE: case TOK_HATE: case TOK_BRA: case TOK_KET: case TOK_END:
-	/* Fall through to the error after the switch */
-	break;
     }
     INTERNAL_ERROR ("Illegal qnode %s in IR",
 		    _notmuch_qnode_to_string (s->local, node));
