@@ -144,6 +144,40 @@ _notmuch_messages_destructor (notmuch_mset_messages_t *messages)
     return 0;
 }
 
+/* Parse a query string.  If there is an error parsing the query
+ * (e.g., a syntax error or out-of-memory), returns an empty query and
+ * sets *error_out to the error message, which will be either static
+ * or talloc-owned by query.
+ */
+static Xapian::Query
+_notmuch_parse_query (notmuch_query_t *query, const char **error_out)
+{
+    const char *query_string = query->query_string;
+    Xapian::Query mail_query (talloc_asprintf (query, "%s%s",
+					       _find_prefix ("type"),
+					       "mail"));
+    Xapian::Query string_query;
+    unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
+			  Xapian::QueryParser::FLAG_PHRASE |
+			  Xapian::QueryParser::FLAG_LOVEHATE |
+			  Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
+			  Xapian::QueryParser::FLAG_WILDCARD |
+			  Xapian::QueryParser::FLAG_PURE_NOT);
+    if (strcmp (query_string, "") == 0 ||
+	strcmp (query_string, "*") == 0) {
+	return mail_query;
+    } else {
+	try {
+	    string_query = query->notmuch->query_parser->
+		parse_query (query_string, flags);
+	} catch (const Xapian::Error &error) {
+	    *error_out = talloc_strdup (query, error.get_msg ().c_str ());
+	    return Xapian::Query ();
+	}
+	return Xapian::Query (Xapian::Query::OP_AND, mail_query, string_query);
+    }
+}
+
 /* Return a query that matches messages with the excluded tags
  * registered with query.  Any tags that explicitly appear in xquery
  * will not be excluded, and will be removed from the list of exclude
@@ -175,7 +209,6 @@ notmuch_messages_t *
 notmuch_query_search_messages (notmuch_query_t *query)
 {
     notmuch_database_t *notmuch = query->notmuch;
-    const char *query_string = query->query_string;
     notmuch_mset_messages_t *messages;
 
     messages = talloc (query, notmuch_mset_messages_t);
@@ -183,6 +216,14 @@ notmuch_query_search_messages (notmuch_query_t *query)
 	return NULL;
 
     try {
+	Xapian::Query final_query, exclude_query;
+	const char *error_msg = NULL;
+
+	final_query = _notmuch_parse_query (query, &error_msg);
+	if (error_msg) {
+	    fprintf (stderr, "%s\n", error_msg);
+	    return NULL;
+	}
 
 	messages->base.is_of_list_type = FALSE;
 	messages->base.iterator = NULL;
@@ -193,29 +234,9 @@ notmuch_query_search_messages (notmuch_query_t *query)
 	talloc_set_destructor (messages, _notmuch_messages_destructor);
 
 	Xapian::Enquire enquire (*notmuch->xapian_db);
-	Xapian::Query mail_query (talloc_asprintf (query, "%s%s",
-						   _find_prefix ("type"),
-						   "mail"));
-	Xapian::Query string_query, final_query, exclude_query;
 	Xapian::MSet mset;
 	Xapian::MSetIterator iterator;
-	unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
-			      Xapian::QueryParser::FLAG_PHRASE |
-			      Xapian::QueryParser::FLAG_LOVEHATE |
-			      Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
-			      Xapian::QueryParser::FLAG_WILDCARD |
-			      Xapian::QueryParser::FLAG_PURE_NOT);
 
-	if (strcmp (query_string, "") == 0 ||
-	    strcmp (query_string, "*") == 0)
-	{
-	    final_query = mail_query;
-	} else {
-	    string_query = notmuch->query_parser->
-		parse_query (query_string, flags);
-	    final_query = Xapian::Query (Xapian::Query::OP_AND,
-					 mail_query, string_query);
-	}
 	messages->base.excluded_doc_ids = NULL;
 
 	if ((query->omit_excluded != NOTMUCH_EXCLUDE_FALSE) && (query->exclude_terms)) {
@@ -512,33 +533,20 @@ unsigned
 notmuch_query_count_messages (notmuch_query_t *query)
 {
     notmuch_database_t *notmuch = query->notmuch;
-    const char *query_string = query->query_string;
     Xapian::doccount count = 0;
 
     try {
-	Xapian::Enquire enquire (*notmuch->xapian_db);
-	Xapian::Query mail_query (talloc_asprintf (query, "%s%s",
-						   _find_prefix ("type"),
-						   "mail"));
-	Xapian::Query string_query, final_query, exclude_query;
-	Xapian::MSet mset;
-	unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
-			      Xapian::QueryParser::FLAG_PHRASE |
-			      Xapian::QueryParser::FLAG_LOVEHATE |
-			      Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
-			      Xapian::QueryParser::FLAG_WILDCARD |
-			      Xapian::QueryParser::FLAG_PURE_NOT);
+	Xapian::Query final_query, exclude_query;
+	const char *error_msg = NULL;
 
-	if (strcmp (query_string, "") == 0 ||
-	    strcmp (query_string, "*") == 0)
-	{
-	    final_query = mail_query;
-	} else {
-	    string_query = notmuch->query_parser->
-		parse_query (query_string, flags);
-	    final_query = Xapian::Query (Xapian::Query::OP_AND,
-					 mail_query, string_query);
+	final_query = _notmuch_parse_query (query, &error_msg);
+	if (error_msg) {
+	    fprintf (stderr, "%s\n", error_msg);
+	    return 0;
 	}
+
+	Xapian::Enquire enquire (*notmuch->xapian_db);
+	Xapian::MSet mset;
 
 	exclude_query = _notmuch_exclude_tags (query, final_query);
 
