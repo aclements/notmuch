@@ -106,10 +106,6 @@ _notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
  * Transformation
  */
 
-/**
- * Return a query that matches a single, literal term with the given
- * text and database prefix (a "boolean prefix" in Xapian lingo).
- */
 _notmuch_qnode_t *
 _notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
@@ -130,16 +126,6 @@ _notmuch_qparser_make_literal_query (
     return node;
 }
 
-/**
- * Return a query that matches the given free-text, prefixed with the
- * given database prefix (a "probabilistic prefix" in Xapian lingo).
- * The text will be split into individual terms using the provided
- * TermGenerator, which can be configured for stemming (STEM_NONE or
- * STEM_SOME) and stopping.  If the TermGenerator is configured for
- * stemming, there is a single term in text, and quoted is false, this
- * will produce a query for the stemmed term.  If there are no terms
- * in text, returns Query ().
- */
 _notmuch_qnode_t *
 _notmuch_qparser_make_text_query (
     const void *ctx, const char *text, bool quoted, const char *db_prefix,
@@ -201,15 +187,6 @@ _notmuch_qparser_make_text_query (
     return node;
 }
 
-/**
- * A label transformer callback, which will be passed a NODE_TERMS
- * token to which the desired label applies.  This must either return
- * a transformed token, or return NULL and set *error_out to an error
- * message.
- */
-typedef _notmuch_qnode_t *_notmuch_qparser_label_transformer (
-    _notmuch_qnode_t *terms, void *opaque, const char **error_out);
-
 struct _label_transform_state
 {
     const char *label;
@@ -237,14 +214,6 @@ label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
     return node;
 }
 
-/**
- * Transform all terms that have the given label in the query rooted
- * at node using the provided transformer.  In effect, this finds all
- * NODE_TERMS tokens in sub-queries under the given label, invokes the
- * callback for all these NODE_TERMS tokens, and strips the label
- * token itself from the query.  If label is NULL, this transforms all
- * un-labeled terms.
- */
 _notmuch_qnode_t *
 _notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
 				  _notmuch_qparser_label_transformer *cb,

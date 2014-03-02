@@ -109,10 +109,57 @@ _notmuch_qparser_parse (const void *ctx, const char *query,
 			const char **error_out);
 
 /**
+ * Return a query that matches a single, literal term with the given
+ * text and database prefix (a "boolean prefix" in Xapian lingo).  If
+ * db_prefix is NULL, this will produced un-prefixed terms.
+ */
+_notmuch_qnode_t *
+_notmuch_qparser_make_literal_query (
+    const void *ctx, const char *text, const char *db_prefix,
+    const char **error_out);
+
+/**
+ * Return a query that matches the given free-text, prefixed with the
+ * given database prefix (a "probabilistic prefix" in Xapian lingo).
+ * The text will be split into individual terms using the provided
+ * TermGenerator, which can be configured for stemming (STEM_NONE or
+ * STEM_SOME) and stopping.  If the TermGenerator is configured for
+ * stemming, there is a single term in text, and quoted is false, this
+ * will produce a query for the stemmed term.  If db_prefix is NULL,
+ * this will produced un-prefixed terms.  If there are no terms in
+ * text, returns Query ().
+ */
+_notmuch_qnode_t *
+_notmuch_qparser_make_text_query (
+    const void *ctx, const char *text, bool quoted, const char *db_prefix,
+    Xapian::TermGenerator tgen, const char **error_out);
+
+/**
+ * A label transformer callback, which will be passed a NODE_TERMS
+ * token to which the desired label applies.  This must either return
+ * a transformed token, or return NULL and set *error_out to an error
+ * message.
+ */
+typedef _notmuch_qnode_t *_notmuch_qparser_label_transformer (
+    _notmuch_qnode_t *terms, void *opaque, const char **error_out);
+
+/**
+ * Transform all terms that have the given label in the query rooted
+ * at node using the provided transformer.  In effect, this finds all
+ * NODE_TERMS tokens in sub-queries under the given label, invokes the
+ * callback for all these NODE_TERMS tokens, and strips the label
+ * token itself from the query.  If label is NULL, this transforms all
+ * un-labeled terms.
+ */
+_notmuch_qnode_t *
+_notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
+				  _notmuch_qparser_label_transformer *cb,
+				  void *opaque, const char **error_out);
+
+/**
  * Transform all terms that have the given label into literal queries.
- * If db_prefix is NULL, this will produced un-prefixed terms.  If
- * exclusive is true, then all terms with this label in the same group
- * will be OR'd (rather than the default AND).
+ * If exclusive is true, then all terms with this label in the same
+ * group will be OR'd (rather than the default AND).
  */
 _notmuch_qnode_t *
 _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
@@ -122,8 +169,7 @@ _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
 /**
  * Transform all terms that have the given label into text queries
  * using the given term generator to split terms.  If label is NULL,
- * this will transform un-labeled terms.  If db_prefix is NULL, this
- * will produced un-prefixed terms.
+ * this will transform un-labeled terms.
  */
 _notmuch_qnode_t *
 _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
