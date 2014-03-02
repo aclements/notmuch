@@ -27,6 +27,10 @@
 using Xapian::Unicode::is_whitespace;
 using Xapian::Unicode::is_wordchar;
 
+/*
+ * Query AST nodes
+ */
+
 static const char *qnode_type_names[] = {
     "AND", "OR", "NOT", "LABEL", "GROUP", "TERMS", "QUERY",
 };
@@ -103,7 +107,7 @@ _notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
 }
 
 /*
- * Transformation
+ * Query node construction
  */
 
 _notmuch_qnode_t *
@@ -186,6 +190,10 @@ _notmuch_qparser_make_text_query (
     delete[] qs;
     return node;
 }
+
+/*
+ * Transformation
+ */
 
 struct _label_transform_state
 {
