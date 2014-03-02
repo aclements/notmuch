@@ -86,6 +86,8 @@ test_one (void *ctx, const char *query_str)
     // toks = _notmuch_qparser_lex (local, qparser, query_str);
     // printf("[lex]    %s\n", _notmuch_token_show_list (local, toks));
 
+    tgen.set_stemmer (Xapian::Stem ("english"));
+
     error = NULL;
     root = _notmuch_qparser_parse (local, query_str, &error);
     if (! root) {
@@ -143,6 +145,8 @@ create_xapian_qparser (void)
 {
     Xapian::QueryParser xq;
     xq.set_default_op (Xapian::Query::OP_AND);
+    xq.set_stemmer (Xapian::Stem ("english"));
+    xq.set_stemming_strategy (Xapian::QueryParser::STEM_SOME);
     xq.add_prefix ("text", "T");
     xq.add_boolean_prefix ("lit", "L");
     xq.add_boolean_prefix ("litex", "E");
