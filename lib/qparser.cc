@@ -21,7 +21,6 @@
 #include "qparser.h"
 #include "notmuch-private.h"
 
-// XXX Stemming
 // XXX Wildcards
 
 using Xapian::Unicode::is_whitespace;
@@ -133,12 +132,15 @@ _notmuch_qparser_make_literal_query (
  * Return a query that matches the given free-text, prefixed with the
  * given database prefix (a "probabilistic prefix" in Xapian lingo).
  * The text will be split into individual terms using the provided
- * TermGenerator, which can be configured for stemming and stopping.
- * If there are no terms in text, returns Query ().
+ * TermGenerator, which can be configured for stemming (STEM_NONE or
+ * STEM_SOME) and stopping.  If the TermGenerator is configured for
+ * stemming, there is a single term in text, and quoted is false, this
+ * will produce a query for the stemmed term.  If there are no terms
+ * in text, returns Query ().
  */
 _notmuch_qnode_t *
 _notmuch_qparser_make_text_query (
-    const void *ctx, const char *text, const char *db_prefix,
+    const void *ctx, const char *text, bool quoted, const char *db_prefix,
     Xapian::TermGenerator tgen, const char **error_out)
 {
     _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
@@ -162,12 +164,28 @@ _notmuch_qparser_make_text_query (
     Xapian::Query *qs = new Xapian::Query[nterms];
     Xapian::TermIterator it, end;
     Xapian::PositionIterator pit, pend;
+    std::string stemmed;
     for (it = doc.termlist_begin (), end = doc.termlist_end ();
 	 it != end; ++it) {
+	/* Skip unstemmed terms */
+	if ((*it).length () && (*it)[0] == 'Z') {
+	    if (nterms == 1 && ! quoted)
+		stemmed = *it;
+	    continue;
+	}
 	for (pit = it.positionlist_begin (), pend = it.positionlist_end ();
 	     pit != pend; ++pit)
 	    qs[*pit - 1] = Xapian::Query (*it);
     }
+
+    /* If the term generator was configured to stem, this was not
+     * quoted or a phrase, and we found a stemmed term, use it.
+     * Xapian further restricts this to terms that don't start with a
+     * lower case letter (or a few other Unicode classes) and that
+     * aren't followed by various "stem preventers".
+     */
+    if (! stemmed.empty ())
+	qs[0] = Xapian::Query (stemmed);
 
     /* Build query */
     if (nterms == 0)
@@ -271,7 +289,8 @@ text_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
 {
     struct _text_prefix_state *state = (struct _text_prefix_state*)opaque;
     return _notmuch_qparser_make_text_query (
-	terms, terms->text, state->db_prefix, state->tgen, error_out);
+	terms, terms->text, terms->quoted, state->db_prefix, state->tgen,
+	error_out);
 }
 
 _notmuch_qnode_t *
@@ -590,7 +609,7 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	/* Terms that weren't labeled are treated as regular text
 	 * queries. */
 	return _notmuch_qparser_make_text_query (
-	    s->local, node->text, NULL, s->tgen, &s->error)->query;
+	    s->local, node->text, node->quoted, NULL, s->tgen, &s->error)->query;
 
     case NODE_QUERY:
 	return node->query;
