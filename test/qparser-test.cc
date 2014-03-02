@@ -100,9 +100,10 @@ test_one (void *ctx, const char *query_str)
 	root = _notmuch_qparser_text_prefix (root, "text", "T", tgen, &error);
 	root = _notmuch_qparser_literal_prefix (root, "lit", "L", false, &error);
 	root = _notmuch_qparser_literal_prefix (root, "litex", "E", true, &error);
+	root = _notmuch_qparser_text_prefix (root, NULL, NULL, tgen, &error);
 	/* printf("[xform]  %s\n", _notmuch_qnode_to_string (local, root)); */
 
-	q = _notmuch_qparser_generate (local, root, tgen, &error);
+	q = _notmuch_qparser_generate (local, root, &error);
 	if (error)
 	    qparser_desc = talloc_asprintf (local, "error: %s", error);
 	else
