@@ -119,7 +119,10 @@ _notmuch_qparser_make_literal_query (
     if (! node)
 	return NULL;
     std::string db_term (db_prefix);
-    if (*db_prefix && *(db_prefix + 1) && isupper ((unsigned char) text[0]))
+    /* This test is compatible with Xapian's prefix_needs_colon.  It's
+     * important that we don't use isupper here, since that's
+     * locale-specific. */
+    if (*db_prefix && *(db_prefix + 1) && text[0] >= 'A' && text[0] <= 'Z')
 	db_term += ':';
     db_term += text;
     node->query = Xapian::Query (db_term);
