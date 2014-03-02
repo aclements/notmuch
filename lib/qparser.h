@@ -118,6 +118,12 @@ _notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
     const char **error_out);
 
+typedef struct _notmuch_qparser_text_options
+{
+    const char *db_prefix;
+    Xapian::TermGenerator *tgen;
+} _notmuch_qparser_text_options_t;
+
 /**
  * Return a query that matches the given free-text, prefixed with the
  * given database prefix (a "probabilistic prefix" in Xapian lingo).
@@ -131,8 +137,8 @@ _notmuch_qparser_make_literal_query (
  */
 _notmuch_qnode_t *
 _notmuch_qparser_make_text_query (
-    const void *ctx, const char *text, bool quoted, const char *db_prefix,
-    Xapian::TermGenerator tgen, const char **error_out);
+    const void *ctx, const char *text, bool quoted,
+    _notmuch_qparser_text_options_t *options, const char **error_out);
 
 /**
  * A label transformer callback, which will be passed a NODE_TERMS
@@ -173,7 +179,7 @@ _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
  */
 _notmuch_qnode_t *
 _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
-			      const char *db_prefix, Xapian::TermGenerator tgen,
+			      _notmuch_qparser_text_options_t *options,
 			      const char **error_out);
 
 /**

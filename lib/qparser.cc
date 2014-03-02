@@ -132,8 +132,8 @@ _notmuch_qparser_make_literal_query (
 
 _notmuch_qnode_t *
 _notmuch_qparser_make_text_query (
-    const void *ctx, const char *text, bool quoted, const char *db_prefix,
-    Xapian::TermGenerator tgen, const char **error_out)
+    const void *ctx, const char *text, bool quoted,
+    _notmuch_qparser_text_options_t *options, const char **error_out)
 {
     _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
     if (! node)
@@ -141,11 +141,12 @@ _notmuch_qparser_make_text_query (
 
     /* Use the term generator to split text.  (We use the Utf8Iterator
      * version of index_text to avoid copying through std::string.) */
+    Xapian::TermGenerator tgen (*options->tgen);
     Xapian::Document doc;
     tgen.set_document (doc);
     tgen.set_termpos (0);
-    if (db_prefix)
-	tgen.index_text (Xapian::Utf8Iterator (text), 1, db_prefix);
+    if (options->db_prefix)
+	tgen.index_text (Xapian::Utf8Iterator (text), 1, options->db_prefix);
     else
 	tgen.index_text (Xapian::Utf8Iterator (text));
 
@@ -258,29 +259,21 @@ _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
 					     &state, error_out);
 }
 
-struct _text_prefix_state
-{
-    const char *label, *db_prefix;
-    Xapian::TermGenerator tgen;
-};
-
 static _notmuch_qnode_t *
 text_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
 {
-    struct _text_prefix_state *state = (struct _text_prefix_state*)opaque;
     return _notmuch_qparser_make_text_query (
-	terms, terms->text, terms->quoted, state->db_prefix, state->tgen,
-	error_out);
+	terms, terms->text, terms->quoted,
+	(_notmuch_qparser_text_options_t *)opaque, error_out);
 }
 
 _notmuch_qnode_t *
 _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
-			      const char *db_prefix, Xapian::TermGenerator tgen,
+			      _notmuch_qparser_text_options_t *options,
 			      const char **error_out)
 {
-    struct _text_prefix_state state = {label, db_prefix, tgen};
     return _notmuch_qparser_label_transform (node, label, text_prefix_cb,
-					     &state, error_out);
+					     options, error_out);
 }
 
 /*
