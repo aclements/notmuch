@@ -121,6 +121,7 @@ parse_quoted (struct _parse_state *s)
     if (! dst)
 	return parse_fail (s, "Out of memory allocating term");
     node->text = dst;
+    node->quoted = true;
 
     /* Copy an de-escape text */
     for (const char *src = s->pos.raw (); src != pos.raw (); ++src, ++dst) {

@@ -72,6 +72,8 @@ typedef struct _notmuch_qnode
     /* For NODE_LABEL, the query label of this token.  For NODE_TERMS,
      * the literal text from the query. */
     const char *text;
+    /* For NODE_TERMS, whether these terms were quoted. */
+    bool quoted;
 
     /* For NODE_QUERY, the Xapian query for this node.  (For other
      * types, this will be the default-constructed Query, which is
