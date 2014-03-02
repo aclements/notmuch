@@ -133,10 +133,12 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
 /**
  * Generate a Xapian Query from a qparser AST.
  *
- * Any NODE_TERMS remaining in the AST will be parsed into a text
- * query using the provided term generator.  If the AST contains any
- * NODE_LABEL nodes, an "unknown label" error will be reported;
- * callers should eliminate all known labels during transformation.
+ * The AST must not contain any NODE_TERMS terms; the caller should do
+ * the appropriate transformation pass first to eliminate these.
+ *
+ * If the AST contains any NODE_LABEL nodes, an "unknown label" error
+ * will be reported; callers should eliminate all known labels during
+ * transformation.
  *
  * If there's an error, this returns an empty Query and sets
  * *error_out to the error if *error_out is NULL.  The error will
@@ -144,7 +146,6 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
  */
 Xapian::Query
 _notmuch_qparser_generate (const void *ctx, _notmuch_qnode_t *root,
-			   Xapian::TermGenerator tgen,
 			   const char **error_out);
 
 #pragma GCC visibility pop
