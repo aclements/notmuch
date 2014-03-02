@@ -22,6 +22,7 @@
 #include "notmuch-private.h"
 
 // XXX Wildcards
+// XXX label -> field (more sense for user documentation)
 
 using Xapian::Unicode::is_whitespace;
 using Xapian::Unicode::is_wordchar;
@@ -117,11 +118,12 @@ _notmuch_qparser_make_literal_query (
     _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
     if (! node)
 	return NULL;
-    std::string db_term (db_prefix);
+    std::string db_term (db_prefix ? db_prefix : "");
     /* This test is compatible with Xapian's prefix_needs_colon.  It's
      * important that we don't use isupper here, since that's
      * locale-specific. */
-    if (*db_prefix && *(db_prefix + 1) && text[0] >= 'A' && text[0] <= 'Z')
+    if (db_prefix && *db_prefix && *(db_prefix + 1) &&
+	text[0] >= 'A' && text[0] <= 'Z')
 	db_term += ':';
     db_term += text;
     node->query = Xapian::Query (db_term);
@@ -225,7 +227,7 @@ label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
     /* XXX Should it be an error to have clashing labels?  E.g.,
      * foo:(bar:x)? */
     if (node->type == NODE_LABEL)
-	active = (strcmp (node->text, s->label) == 0);
+	active = s->label && (strcmp (node->text, s->label) == 0);
     else if (active && node->type == NODE_TERMS)
 	return s->cb (node, s->opaque, s->error_out);
     for (size_t i = 0; i < node->nchild; i++)
@@ -240,7 +242,8 @@ label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
  * at node using the provided transformer.  In effect, this finds all
  * NODE_TERMS tokens in sub-queries under the given label, invokes the
  * callback for all these NODE_TERMS tokens, and strips the label
- * token itself from the query.
+ * token itself from the query.  If label is NULL, this transforms all
+ * un-labeled terms.
  */
 _notmuch_qnode_t *
 _notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
@@ -248,7 +251,7 @@ _notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
 				  void *opaque, const char **error_out)
 {
     struct _label_transform_state state = {label, cb, opaque, error_out};
-    return label_transform_rec (&state, node, false);
+    return label_transform_rec (&state, node, label == NULL);
 }
 
 struct _literal_prefix_state

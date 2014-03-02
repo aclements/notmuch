@@ -110,8 +110,9 @@ _notmuch_qparser_parse (const void *ctx, const char *query,
 
 /**
  * Transform all terms that have the given label into literal queries.
- * If exclusive is true, then all terms with this label in the same
- * group will be OR'd (rather than the default AND).
+ * If db_prefix is NULL, this will produced un-prefixed terms.  If
+ * exclusive is true, then all terms with this label in the same group
+ * will be OR'd (rather than the default AND).
  */
 _notmuch_qnode_t *
 _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
@@ -119,7 +120,10 @@ _notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
 				 const char **error_out);
 
 /**
- * Transform all terms that have the given label into text queries.
+ * Transform all terms that have the given label into text queries
+ * using the given term generator to split terms.  If label is NULL,
+ * this will transform un-labeled terms.  If db_prefix is NULL, this
+ * will produced un-prefixed terms.
  */
 _notmuch_qnode_t *
 _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
