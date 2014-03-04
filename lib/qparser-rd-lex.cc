@@ -52,9 +52,9 @@ parse_fail (struct _parse_state *s, const char *error)
 	 * display it more appropriately. */
 	Utf8Iterator estart (s->start), eend (s->end);
 	/* If the query is long, truncate it to around pos. */
-	while (s->pos.raw () - estart.raw () > LIM)
-	    ++estart;
 	if (estart.left () > LIM) {
+	    while (s->pos.raw () - estart.raw () > LIM / 2)
+		++estart;
 	    eend = estart;
 	    for (int i = 0; i < LIM && eend != s->end; ++i)
 		++eend;
@@ -385,15 +385,16 @@ _notmuch_qparser_parse (const void *ctx, const char *query,
     struct _parse_state *s = &state;
     parse_whitespace (s);
     _notmuch_qnode_t *root = parse_binary_op (s, 0);
-    if (parse_punctuation (s, ")"))
-	parse_fail (s, "Unexpected close parenthesis.  "
-		    "Did you mean to quote the parenthesis?");
-    else if (s->pos != s->end)
-	INTERNAL_ERROR ("Query not fully consumed: %s", s->pos.raw ());
 
     if (s->error) {
 	*error_out = s->error;
 	return NULL;
+    } else if (parse_punctuation (s, ")")) {
+	parse_fail (s, "Unexpected close parenthesis.  "
+		    "Did you mean to quote the parenthesis?");
+    } else if (s->pos != s->end) {
+	INTERNAL_ERROR ("Query not fully consumed: %s", s->pos.raw ());
     }
+
     return root;
 }
