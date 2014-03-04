@@ -87,9 +87,9 @@ _notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
 {
     if (! node) {
 	return talloc_strdup (ctx, "<nil>");
-    } else if (node->type == NODE_TERMS) {
+    } else if (node->type == QNODE_TERMS) {
 	return talloc_asprintf (ctx, "\"%s\"", node->text);
-    } else if (node->type == NODE_QUERY) {
+    } else if (node->type == QNODE_QUERY) {
 	return talloc_asprintf (ctx, "QUERY/%s",
 				node->query.get_description ().c_str () +
 				strlen ("Xapian::Query"));
@@ -139,7 +139,7 @@ _notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
     const char **error_out)
 {
-    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
+    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, QNODE_QUERY, error_out);
     if (! node)
 	return NULL;
     std::string db_term (db_prefix ? db_prefix : "");
@@ -159,7 +159,7 @@ _notmuch_qparser_make_text_query (
     const void *ctx, const char *text, bool quoted,
     _notmuch_qparser_text_options_t *options, const char **error_out)
 {
-    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, NODE_QUERY, error_out);
+    _notmuch_qnode_t *node = _notmuch_qnode_create (ctx, QNODE_QUERY, error_out);
     if (! node)
 	return NULL;
 
@@ -264,16 +264,16 @@ label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
 	return node;
     /* XXX Should it be an error to have clashing labels?  E.g.,
      * foo:(bar:x)? */
-    if (node->type == NODE_LABEL)
+    if (node->type == QNODE_LABEL)
 	active = s->label && (strcmp (node->text, s->label) == 0);
-    else if (active && node->type == NODE_TERMS)
+    else if (active && node->type == QNODE_TERMS)
 	return s->cb (node, s->opaque, &s->error);
     for (size_t i = 0; i < node->nchild; i++) {
 	_notmuch_qnode_t *n = label_transform_rec (s, node->child[i], active);
 	if (n)
 	    node->child[i] = n;
     }
-    if (active && node->type == NODE_LABEL)
+    if (active && node->type == QNODE_LABEL)
 	return node->child[0];
     return node;
 }
@@ -349,10 +349,10 @@ struct _generate_state
 static _notmuch_qnode_t *
 generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
 {
-    /* Turn the group into a NODE_AND, but with children in the same
+    /* Turn the group into a QNODE_AND, but with children in the same
      * conjunction class OR'd. */
     _notmuch_qnode_t *sub =
-	_notmuch_qnode_create (s->local, NODE_AND, &s->error);
+	_notmuch_qnode_create (s->local, QNODE_AND, &s->error);
     if (! sub)
 	return NULL;
     for (size_t i = 0; i < node->nchild; ++i) {
@@ -370,7 +370,7 @@ generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
 	    }
 	    if (j == sub->nchild) {
 		_notmuch_qnode_t *conj =
-		    _notmuch_qnode_create (s->local, NODE_OR, &s->error);
+		    _notmuch_qnode_create (s->local, QNODE_OR, &s->error);
 		if (! conj)
 		    return NULL;
 		conj->conj_class = child->conj_class;
@@ -396,12 +396,12 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
     /* Translate this node to a query.  Be careful because any
      * recursive generate call can return an empty query. */
     switch (node->type) {
-    case NODE_AND:
+    case QNODE_AND:
 	for (size_t i = 0; i < node->nchild; ++i) {
 	    Query::op op = Query::OP_AND;
 	    if (l.empty ()) {
 		l = generate (s, node->child[i]);
-	    } else if (node->child[i]->type == NODE_NOT) {
+	    } else if (node->child[i]->type == QNODE_NOT) {
 		r = generate (s, node->child[i]->child[0]);
 		op = Query::OP_AND_NOT;
 	    } else {
@@ -412,7 +412,7 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	}
 	return l;
 
-    case NODE_OR:
+    case QNODE_OR:
 	for (size_t i = 0; i < node->nchild; ++i) {
 	    r = generate (s, node->child[i]);
 	    if (l.empty ())
@@ -422,35 +422,35 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	}
 	return l;
 
-    case NODE_NOT:
-	if (node->child[0]->type == NODE_NOT)
+    case QNODE_NOT:
+	if (node->child[0]->type == QNODE_NOT)
 	    return generate (s, node->child[0]->child[0]);
 	l = generate (s, node->child[0]);
 	if (l.empty ())
 	    return l;
 	return Query (Query::OP_AND_NOT, Query::MatchAll, l);
 
-    case NODE_LABEL:
+    case QNODE_LABEL:
 	/* Transformers have stripped out all known labels. */
 	if (! s->error)
 	    s->error = talloc_asprintf (
 		s->ctx, "Unknown label '%s' in query", node->text);
 	return Query ();
 
-    case NODE_GROUP:
+    case QNODE_GROUP:
 	/* XXX Currently we don't distinguish weighted and
 	 * non-weighted parts of the query.  Xapian uses FILTER or
 	 * SCALE_WEIGHT*0 for any boolean-prefixed terms in a prob.
 	 * We should do this, too, but should probably handle it
-	 * generically in NODE_AND. */
+	 * generically in QNODE_AND. */
 	return generate (s, generate_group (s, node));
 
-    case NODE_TERMS:
+    case QNODE_TERMS:
 	if (! s->error)
-	    s->error = "Internal error: NODE_TERMS in qparser AST";
+	    s->error = "Internal error: QNODE_TERMS in qparser AST";
 	return Query ();
 
-    case NODE_QUERY:
+    case QNODE_QUERY:
 	return node->query;
     }
     INTERNAL_ERROR ("Illegal qnode %s in IR",

@@ -31,22 +31,22 @@
 enum _notmuch_qnode_type
 {
     /* Binary operators.  These have two or more children. */
-    NODE_AND, NODE_OR,
+    QNODE_AND, QNODE_OR,
     /* Unary operators.  These have one child.
      *
      * Xapian::Query has no pure NOT operator, so the generator
      * converts (AND x (NOT y)) into (x AND_NOT y) and other
      * occurrences of (NOT x) into (<all> AND_NOT x).
      *
-     * For NODE_LABEL, the text field specifies the label (sans
-     * colon).  The child of NODE_LABEL may be a term or a sub-query.
+     * For QNODE_LABEL, the text field specifies the label (sans
+     * colon).  The child of QNODE_LABEL may be a term or a sub-query.
      */
-    NODE_NOT, NODE_LABEL,
+    QNODE_NOT, QNODE_LABEL,
     /* A group of space-separated queries.  Syntactically, a group is
      * the stuff between boolean operators.  It's equivalent to
-     * NODE_AND except that children with the same conjunction class
+     * QNODE_AND except that children with the same conjunction class
      * are OR'd.  (Xapian calls this a "prob".) */
-    NODE_GROUP,
+    QNODE_GROUP,
     /* Search terms.  This can represent a single term, a quoted
      * phrase, or an implicit phrase.  An implicit phrase is something
      * like "foo/bar", for which the database contains two separate
@@ -56,10 +56,10 @@ enum _notmuch_qnode_type
      * approach: the lexer consumes almost anything except whitespace
      * as a potential phrase and the generator splits it into
      * individual search terms. */
-    NODE_TERMS,
+    QNODE_TERMS,
     /* A "compiled" Xapian query.  These are produced by
      * transformations when they compile parts of a query AST. */
-    NODE_QUERY,
+    QNODE_QUERY,
 };
 
 /**
@@ -69,19 +69,19 @@ typedef struct _notmuch_qnode
 {
     enum _notmuch_qnode_type type;
 
-    /* For NODE_LABEL, the query label of this token.  For NODE_TERMS,
+    /* For QNODE_LABEL, the query label of this token.  For QNODE_TERMS,
      * the literal text from the query. */
     const char *text;
-    /* For NODE_TERMS, whether these terms were quoted. */
+    /* For QNODE_TERMS, whether these terms were quoted. */
     bool quoted;
 
-    /* For NODE_QUERY, the Xapian query for this node.  (For other
+    /* For QNODE_QUERY, the Xapian query for this node.  (For other
      * types, this will be the default-constructed Query, which is
      * just a NULL pointer internally.)
      */
     Xapian::Query query;
 
-    /* For children of NODE_GROUP, the conjunction class of this node.
+    /* For children of QNODE_GROUP, the conjunction class of this node.
      * Children with identical non-NULL conjunction classes will be
      * OR'd together (and these, in turn, AND'd). */
     const char *conj_class;
@@ -148,7 +148,7 @@ _notmuch_qparser_make_text_query (
     _notmuch_qparser_text_options_t *options, const char **error_out);
 
 /**
- * A label transformer callback, which will be passed a NODE_TERMS
+ * A label transformer callback, which will be passed a QNODE_TERMS
  * token to which the desired label applies.  This must either return
  * a transformed token, or return NULL and set *error_out to an error
  * message.
@@ -159,8 +159,8 @@ typedef _notmuch_qnode_t *_notmuch_qparser_label_transformer (
 /**
  * Transform all terms that have the given label in the query rooted
  * at node using the provided transformer.  In effect, this finds all
- * NODE_TERMS tokens in sub-queries under the given label, invokes the
- * callback for all these NODE_TERMS tokens, and strips the label
+ * QNODE_TERMS tokens in sub-queries under the given label, invokes
+ * the callback for all these QNODE_TERMS tokens, and strips the label
  * token itself from the query.  If label is NULL, this transforms all
  * un-labeled terms.
  */
@@ -192,10 +192,10 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
 /**
  * Generate a Xapian Query from a qparser AST.
  *
- * The AST must not contain any NODE_TERMS terms; the caller should do
- * the appropriate transformation pass first to eliminate these.
+ * The AST must not contain any QNODE_TERMS terms; the caller should
+ * do the appropriate transformation pass first to eliminate these.
  *
- * If the AST contains any NODE_LABEL nodes, an "unknown label" error
+ * If the AST contains any QNODE_LABEL nodes, an "unknown label" error
  * will be reported; callers should eliminate all known labels during
  * transformation.
  *
