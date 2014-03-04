@@ -253,23 +253,26 @@ struct _label_transform_state
     const char *label;
     _notmuch_qparser_label_transformer *cb;
     void *opaque;
-    const char **error_out;
+    const char *error;
 };
 
 static _notmuch_qnode_t *
 label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
 		     bool active)
 {
-    if (*s->error_out)
+    if (s->error)
 	return node;
     /* XXX Should it be an error to have clashing labels?  E.g.,
      * foo:(bar:x)? */
     if (node->type == NODE_LABEL)
 	active = s->label && (strcmp (node->text, s->label) == 0);
     else if (active && node->type == NODE_TERMS)
-	return s->cb (node, s->opaque, s->error_out);
-    for (size_t i = 0; i < node->nchild; i++)
-	node->child[i] = label_transform_rec (s, node->child[i], active);
+	return s->cb (node, s->opaque, &s->error);
+    for (size_t i = 0; i < node->nchild; i++) {
+	_notmuch_qnode_t *n = label_transform_rec (s, node->child[i], active);
+	if (n)
+	    node->child[i] = n;
+    }
     if (active && node->type == NODE_LABEL)
 	return node->child[0];
     return node;
@@ -280,8 +283,13 @@ _notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
 				  _notmuch_qparser_label_transformer *cb,
 				  void *opaque, const char **error_out)
 {
-    struct _label_transform_state state = {label, cb, opaque, error_out};
-    return label_transform_rec (&state, node, label == NULL);
+    struct _label_transform_state state = {label, cb, opaque, NULL};
+    _notmuch_qnode_t *n = label_transform_rec (&state, node, label == NULL);
+    if (state.error) {
+	*error_out = state.error;
+	return NULL;
+    }
+    return n;
 }
 
 struct _literal_prefix_state
