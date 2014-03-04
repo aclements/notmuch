@@ -320,8 +320,14 @@ parse_binary_op (struct _parse_state *s, int prec)
 
     _notmuch_qnode_t *left = parse_binary_op (s, prec + 1);
     _notmuch_qnode_t *op = NULL;
-    while (! s->error && ((prec == 0 && parse_kw (s, "or")) ||
-			  (prec == 1 && parse_kw (s, "and")))) {
+    Utf8Iterator prev_pos;
+    bool and_not;
+    /* We allow things like "a NOT b" to mean "a AND NOT b" for Xapian
+     * compatibility. */
+    while (prev_pos = s->pos, and_not = false,
+	   ! s->error && ((prec == 0 && parse_kw (s, "or")) ||
+			  (prec == 1 && (parse_kw (s, "and") ||
+					 (and_not = parse_kw (s, "not")))))) {
 	if (! op) {
 	    op = _notmuch_qnode_create (s->ctx, prec == 0 ? NODE_OR : NODE_AND,
 					&s->error);
@@ -329,6 +335,10 @@ parse_binary_op (struct _parse_state *s, int prec)
 		return NULL;
 	    _notmuch_qnode_add_child (op, left, &s->error);
 	}
+	if (and_not)
+	    /* Back up and let parse_unary_op consume the NOT and
+	     * build the NOT node. */
+	    s->pos = prev_pos;
 	_notmuch_qnode_add_child (op, parse_binary_op (s, prec + 1), &s->error);
     }
     return op ? op : left;
