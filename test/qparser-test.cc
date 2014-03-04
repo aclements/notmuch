@@ -97,10 +97,14 @@ test_one (void *ctx, const char *query_str)
 	printf("[parse]  %s\n", _notmuch_qnode_to_string (local, root));
 
 	error = NULL;
-	root = _notmuch_qparser_text_prefix (root, "text", "T", tgen, &error);
+	_notmuch_qparser_text_options_t opts;
+	opts.tgen = &tgen;
+	opts.db_prefix = "T";
+	root = _notmuch_qparser_text_prefix (root, "text", &opts, &error);
 	root = _notmuch_qparser_literal_prefix (root, "lit", "L", false, &error);
 	root = _notmuch_qparser_literal_prefix (root, "litex", "E", true, &error);
-	root = _notmuch_qparser_text_prefix (root, NULL, NULL, tgen, &error);
+	opts.db_prefix = NULL;
+	root = _notmuch_qparser_text_prefix (root, NULL, &opts, &error);
 	/* printf("[xform]  %s\n", _notmuch_qnode_to_string (local, root)); */
 
 	q = _notmuch_qparser_generate (local, root, &error);
