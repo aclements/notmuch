@@ -70,6 +70,8 @@ parse_fail (struct _parse_state *s, const char *error)
 	    (int)(eend == s->end ? estart.left () : eend.raw () - estart.raw ()),
 	    estart.raw (), eend == s->end ? "" : "...",
 	    spaces, "");
+	if (! s->error)
+	    s->error = error;
     }
     return NULL;
 }
