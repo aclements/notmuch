@@ -21,7 +21,9 @@
 #include "qparser.h"
 #include "notmuch-private.h"
 
-// XXX Wildcards
+#include <vector>
+
+// XXX Exact term wildcards
 // XXX label -> field (more sense for user documentation)
 
 using Xapian::Unicode::is_whitespace;
@@ -110,6 +112,28 @@ _notmuch_qnode_to_string (const void *ctx, _notmuch_qnode_t *node)
  * Query node construction
  */
 
+static Xapian::Query
+expand_wildcard (Xapian::Database db, const char *term, size_t limit,
+		 const char **error_out)
+{
+    std::vector<Xapian::Query> qs;
+    Xapian::TermIterator i = db.allterms_begin (term),
+	end = db.allterms_end (term);
+
+    for (; i != end; i++) {
+	if (limit && qs.size () == limit) {
+	    if (! *error_out)
+		*error_out = "Wildcard expands to too many terms; please be more specific";
+	    return Xapian::Query ();
+	}
+
+	qs.push_back (Xapian::Query (*i));
+    }
+    if (qs.empty ())
+	return Xapian::Query::MatchNothing;
+    return Xapian::Query (Xapian::Query::OP_SYNONYM, qs.begin (), qs.end ());
+}
+
 _notmuch_qnode_t *
 _notmuch_qparser_make_literal_query (
     const void *ctx, const char *text, const char *db_prefix,
@@ -139,6 +163,20 @@ _notmuch_qparser_make_text_query (
     if (! node)
 	return NULL;
 
+    /* As a special case of wildcard expansion, a bare * expands to
+     * everything. */
+    if (options->wildcard && ! quoted && strcmp (text, "*") == 0) {
+	if (options->db_prefix) {
+	    node->query = expand_wildcard (*options->db, options->db_prefix,
+					   options->wildcard_limit, error_out);
+	    if (node->query.empty ())
+		return NULL;
+	} else {
+	    node->query = Xapian::Query::MatchAll;
+	}
+	return node;
+    }
+
     /* Use the term generator to split text.  (We use the Utf8Iterator
      * version of index_text to avoid copying through std::string.) */
     Xapian::TermGenerator tgen (*options->tgen);
@@ -154,10 +192,10 @@ _notmuch_qparser_make_text_query (
      * the list of terms it split text into, so we have to walk over
      * the terms in the Document that index_text populated. */
     size_t nterms = tgen.get_termpos();
-    Xapian::Query *qs = new Xapian::Query[nterms];
+    std::vector<Xapian::Query> qs (nterms);
     Xapian::TermIterator it, end;
     Xapian::PositionIterator pit, pend;
-    std::string stemmed;
+    std::string single, stemmed;
     for (it = doc.termlist_begin (), end = doc.termlist_end ();
 	 it != end; ++it) {
 	/* Skip unstemmed terms */
@@ -166,9 +204,24 @@ _notmuch_qparser_make_text_query (
 		stemmed = *it;
 	    continue;
 	}
+	/* If there's just one term, we may need it later */
+	if (nterms == 1 && single.empty ())
+	    single = *it;
+	/* Put terms in their positions in the query */
 	for (pit = it.positionlist_begin (), pend = it.positionlist_end ();
 	     pit != pend; ++pit)
 	    qs[*pit - 1] = Xapian::Query (*it);
+    }
+
+    /* Perform wildcard expansion */
+    if (options->wildcard && ! quoted && nterms == 1 &&
+	text[strlen (text) - 1] == '*') {
+	qs[0] = expand_wildcard (*options->db, single.c_str (),
+				 options->wildcard_limit, error_out);
+	if (qs[0].empty ())
+	    return NULL;
+	/* Inhibit stemming */
+	stemmed = std::string ();
     }
 
     /* If the term generator was configured to stem, this was not
@@ -187,8 +240,7 @@ _notmuch_qparser_make_text_query (
 	node->query = qs[0];
     else
 	node->query = Xapian::Query (Xapian::Query::OP_PHRASE,
-				     qs, qs + nterms, nterms);
-    delete[] qs;
+				     qs.begin (), qs.end (), qs.size ());
     return node;
 }
 

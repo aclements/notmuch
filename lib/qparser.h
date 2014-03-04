@@ -121,7 +121,14 @@ _notmuch_qparser_make_literal_query (
 typedef struct _notmuch_qparser_text_options
 {
     const char *db_prefix;
+    Xapian::Database *db;
     Xapian::TermGenerator *tgen;
+    /* If true, expand unquoted, single terms that end in '*'.  db
+     * must be non-NULL. */
+    bool wildcard;
+    /* If a wildcard expands more than wildcard_limit terms, return an
+     * error.  If 0, no limit. */
+    size_t wildcard_limit;
 } _notmuch_qparser_text_options_t;
 
 /**
