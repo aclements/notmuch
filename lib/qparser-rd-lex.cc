@@ -32,7 +32,7 @@ using Xapian::Utf8Iterator;
 
 struct _parse_state
 {
-    Utf8Iterator pos, end;
+    Utf8Iterator pos, start, end;
     const void *ctx;
     const char *error;
 };
@@ -43,8 +43,34 @@ parse_binary_op (struct _parse_state *s, int prec);
 static _notmuch_qnode_t *
 parse_fail (struct _parse_state *s, const char *error)
 {
-    if (! s->error)
-	s->error = error;
+    enum { LIM = 65 };
+    if (! s->error) {
+	/* Point out where in the query the problem is.  Getting the
+	 * actual visual width of a Unicode string is HARD, so we just
+	 * assume each code point is a space wide.  FIXME: position
+	 * information should be propagated up to the caller so it can
+	 * display it more appropriately. */
+	Utf8Iterator estart (s->start), eend (s->end);
+	/* If the query is long, truncate it to around pos. */
+	while (s->pos.raw () - estart.raw () > LIM)
+	    ++estart;
+	if (estart.left () > LIM) {
+	    eend = estart;
+	    for (int i = 0; i < LIM && eend != s->end; ++i)
+		++eend;
+	}
+	unsigned spaces = estart == s->start ? 0 : 3;
+	for (Utf8Iterator it (estart); it != s->pos; ++it)
+	    ++spaces;
+
+	s->error = talloc_asprintf (
+	    s->ctx, "%s\n  %s%.*s%s\n  %*s^",
+	    error,
+	    estart == s->start ? "" : "...",
+	    (int)(eend == s->end ? estart.left () : eend.raw () - estart.raw ()),
+	    estart.raw (), eend == s->end ? "" : "...",
+	    spaces, "");
+    }
     return NULL;
 }
 
@@ -348,8 +374,8 @@ _notmuch_qnode_t *
 _notmuch_qparser_parse (const void *ctx, const char *query,
 			const char **error_out)
 {
-    struct _parse_state state = {Utf8Iterator (query), Utf8Iterator (),
-				 ctx, NULL};
+    Utf8Iterator start (query);
+    struct _parse_state state = {start, start, Utf8Iterator (), ctx, NULL};
     struct _parse_state *s = &state;
     parse_whitespace (s);
     _notmuch_qnode_t *root = parse_binary_op (s, 0);
