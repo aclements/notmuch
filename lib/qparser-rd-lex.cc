@@ -309,8 +309,8 @@ parse_unary_op (struct _parse_state *s)
 }
 
 /**
- * and_expr <- or_expr (AND ^ or_expr)*
- * or_expr  <- unary_expr (OR ^ unary_expr)*
+ * or_expr  <- and_expr (OR ^ and_expr)*
+ * and_expr <- unary_expr ((AND / NOT) ^ unary_expr)*
  */
 static _notmuch_qnode_t *
 parse_binary_op (struct _parse_state *s, int prec)
