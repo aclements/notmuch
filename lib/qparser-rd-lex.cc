@@ -132,9 +132,14 @@ parse_quoted (struct _parse_state *s)
      * +/-/( in quotes mode and simply doesn't generate tokens for
      * them.  For us, the term generator will discard them. */
     Utf8Iterator pos (s->pos);
-    while (pos != s->end && (*pos != '"' ||
-			     strncmp (pos.raw (), "\"\"", 2) == 0))
+    while (pos != s->end) {
+	if (*pos == '"') {
+	    if (pos.left() < 2 || strncmp (pos.raw (), "\"\"", 2) != 0)
+		break;
+	    ++pos;
+	}
 	++pos;
+    }
     if (pos == s->end)
 	return parse_fail (s, "Unbalanced quotation marks");
 
@@ -149,12 +154,13 @@ parse_quoted (struct _parse_state *s)
     node->text = dst;
     node->quoted = true;
 
-    /* Copy an de-escape text */
+    /* Copy and de-escape text */
     for (const char *src = s->pos.raw (); src != pos.raw (); ++src, ++dst) {
 	*dst = *src;
 	if (*src == '"')
 	    ++src;
     }
+    *dst = 0;
     s->pos = pos;
     return node;
 }
