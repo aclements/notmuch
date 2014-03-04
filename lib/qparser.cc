@@ -24,7 +24,6 @@
 #include <vector>
 
 // XXX Exact term wildcards
-// XXX label -> field (more sense for user documentation)
 
 using Xapian::Unicode::is_whitespace;
 using Xapian::Unicode::is_wordchar;
@@ -34,7 +33,7 @@ using Xapian::Unicode::is_wordchar;
  */
 
 static const char *qnode_type_names[] = {
-    "AND", "OR", "NOT", "LABEL", "GROUP", "TERMS", "QUERY",
+    "AND", "OR", "NOT", "FIELD", "GROUP", "TERMS", "QUERY",
 };
 
 static int
@@ -248,43 +247,43 @@ _notmuch_qparser_make_text_query (
  * Transformation
  */
 
-struct _label_transform_state
+struct _field_transform_state
 {
-    const char *label;
-    _notmuch_qparser_label_transformer *cb;
+    const char *field;
+    _notmuch_qparser_field_transformer *cb;
     void *opaque;
     const char *error;
 };
 
 static _notmuch_qnode_t *
-label_transform_rec (struct _label_transform_state *s, _notmuch_qnode_t *node,
+field_transform_rec (struct _field_transform_state *s, _notmuch_qnode_t *node,
 		     bool active)
 {
     if (s->error)
 	return node;
-    /* XXX Should it be an error to have clashing labels?  E.g.,
+    /* XXX Should it be an error to have clashing fields?  E.g.,
      * foo:(bar:x)? */
-    if (node->type == QNODE_LABEL)
-	active = s->label && (strcmp (node->text, s->label) == 0);
+    if (node->type == QNODE_FIELD)
+	active = s->field && (strcmp (node->text, s->field) == 0);
     else if (active && node->type == QNODE_TERMS)
 	return s->cb (node, s->opaque, &s->error);
     for (size_t i = 0; i < node->nchild; i++) {
-	_notmuch_qnode_t *n = label_transform_rec (s, node->child[i], active);
+	_notmuch_qnode_t *n = field_transform_rec (s, node->child[i], active);
 	if (n)
 	    node->child[i] = n;
     }
-    if (active && node->type == QNODE_LABEL)
+    if (active && node->type == QNODE_FIELD)
 	return node->child[0];
     return node;
 }
 
 _notmuch_qnode_t *
-_notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
-				  _notmuch_qparser_label_transformer *cb,
+_notmuch_qparser_field_transform (_notmuch_qnode_t *node, const char *field,
+				  _notmuch_qparser_field_transformer *cb,
 				  void *opaque, const char **error_out)
 {
-    struct _label_transform_state state = {label, cb, opaque, NULL};
-    _notmuch_qnode_t *n = label_transform_rec (&state, node, label == NULL);
+    struct _field_transform_state state = {field, cb, opaque, NULL};
+    _notmuch_qnode_t *n = field_transform_rec (&state, node, field == NULL);
     if (state.error) {
 	*error_out = state.error;
 	return NULL;
@@ -294,7 +293,7 @@ _notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
 
 struct _literal_prefix_state
 {
-    const char *label, *db_prefix;
+    const char *field, *db_prefix;
     bool exclusive;
 };
 
@@ -305,17 +304,17 @@ literal_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out
     _notmuch_qnode_t *q = _notmuch_qparser_make_literal_query (
 	terms, terms->text, state->db_prefix, error_out);
     if (state->exclusive && q)
-	q->conj_class = state->label;
+	q->conj_class = state->field;
     return q;
 }
 
 _notmuch_qnode_t *
-_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *field,
 				 const char *db_prefix, bool exclusive,
 				 const char **error_out)
 {
-    struct _literal_prefix_state state = {label, db_prefix, exclusive};
-    return _notmuch_qparser_label_transform (node, label, literal_prefix_cb,
+    struct _literal_prefix_state state = {field, db_prefix, exclusive};
+    return _notmuch_qparser_field_transform (node, field, literal_prefix_cb,
 					     &state, error_out);
 }
 
@@ -328,11 +327,11 @@ text_prefix_cb (_notmuch_qnode_t *terms, void *opaque, const char **error_out)
 }
 
 _notmuch_qnode_t *
-_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
+_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *field,
 			      _notmuch_qparser_text_options_t *options,
 			      const char **error_out)
 {
-    return _notmuch_qparser_label_transform (node, label, text_prefix_cb,
+    return _notmuch_qparser_field_transform (node, field, text_prefix_cb,
 					     options, error_out);
 }
 
@@ -430,11 +429,11 @@ generate (struct _generate_state *s, _notmuch_qnode_t *node)
 	    return l;
 	return Query (Query::OP_AND_NOT, Query::MatchAll, l);
 
-    case QNODE_LABEL:
-	/* Transformers have stripped out all known labels. */
+    case QNODE_FIELD:
+	/* Transformers have stripped out all known fields. */
 	if (! s->error)
 	    s->error = talloc_asprintf (
-		s->ctx, "Unknown label '%s' in query", node->text);
+		s->ctx, "Unknown field '%s' in query", node->text);
 	return Query ();
 
     case QNODE_GROUP:

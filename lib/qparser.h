@@ -38,10 +38,10 @@ enum _notmuch_qnode_type
      * converts (AND x (NOT y)) into (x AND_NOT y) and other
      * occurrences of (NOT x) into (<all> AND_NOT x).
      *
-     * For QNODE_LABEL, the text field specifies the label (sans
-     * colon).  The child of QNODE_LABEL may be a term or a sub-query.
+     * For QNODE_FIELD, the text field specifies the field (sans
+     * colon).  The child of QNODE_FIELD may be a term or a sub-query.
      */
-    QNODE_NOT, QNODE_LABEL,
+    QNODE_NOT, QNODE_FIELD,
     /* A group of space-separated queries.  Syntactically, a group is
      * the stuff between boolean operators.  It's equivalent to
      * QNODE_AND except that children with the same conjunction class
@@ -69,7 +69,7 @@ typedef struct _notmuch_qnode
 {
     enum _notmuch_qnode_type type;
 
-    /* For QNODE_LABEL, the query label of this token.  For QNODE_TERMS,
+    /* For QNODE_FIELD, the query field of this token.  For QNODE_TERMS,
      * the literal text from the query. */
     const char *text;
     /* For QNODE_TERMS, whether these terms were quoted. */
@@ -148,44 +148,44 @@ _notmuch_qparser_make_text_query (
     _notmuch_qparser_text_options_t *options, const char **error_out);
 
 /**
- * A label transformer callback, which will be passed a QNODE_TERMS
- * token to which the desired label applies.  This must either return
+ * A field transformer callback, which will be passed a QNODE_TERMS
+ * token to which the desired field applies.  This must either return
  * a transformed token, or return NULL and set *error_out to an error
  * message.
  */
-typedef _notmuch_qnode_t *_notmuch_qparser_label_transformer (
+typedef _notmuch_qnode_t *_notmuch_qparser_field_transformer (
     _notmuch_qnode_t *terms, void *opaque, const char **error_out);
 
 /**
- * Transform all terms that have the given label in the query rooted
+ * Transform all terms that have the given field in the query rooted
  * at node using the provided transformer.  In effect, this finds all
- * QNODE_TERMS tokens in sub-queries under the given label, invokes
- * the callback for all these QNODE_TERMS tokens, and strips the label
- * token itself from the query.  If label is NULL, this transforms all
- * un-labeled terms.
+ * QNODE_TERMS tokens in sub-queries under the given field, invokes
+ * the callback for all these QNODE_TERMS tokens, and strips the field
+ * token itself from the query.  If field is NULL, this transforms all
+ * terms without a field.
  */
 _notmuch_qnode_t *
-_notmuch_qparser_label_transform (_notmuch_qnode_t *node, const char *label,
-				  _notmuch_qparser_label_transformer *cb,
+_notmuch_qparser_field_transform (_notmuch_qnode_t *node, const char *field,
+				  _notmuch_qparser_field_transformer *cb,
 				  void *opaque, const char **error_out);
 
 /**
- * Transform all terms that have the given label into literal queries.
- * If exclusive is true, then all terms with this label in the same
+ * Transform all terms that have the given field into literal queries.
+ * If exclusive is true, then all terms with this field in the same
  * group will be OR'd (rather than the default AND).
  */
 _notmuch_qnode_t *
-_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *label,
+_notmuch_qparser_literal_prefix (_notmuch_qnode_t *node, const char *field,
 				 const char *db_prefix, bool exclusive,
 				 const char **error_out);
 
 /**
- * Transform all terms that have the given label into text queries
- * using the given term generator to split terms.  If label is NULL,
- * this will transform un-labeled terms.
+ * Transform all terms that have the given field into text queries
+ * using the given term generator to split terms.  If field is NULL,
+ * this will transform terms without a field.
  */
 _notmuch_qnode_t *
-_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
+_notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *field,
 			      _notmuch_qparser_text_options_t *options,
 			      const char **error_out);
 
@@ -195,8 +195,8 @@ _notmuch_qparser_text_prefix (_notmuch_qnode_t *node, const char *label,
  * The AST must not contain any QNODE_TERMS terms; the caller should
  * do the appropriate transformation pass first to eliminate these.
  *
- * If the AST contains any QNODE_LABEL nodes, an "unknown label" error
- * will be reported; callers should eliminate all known labels during
+ * If the AST contains any QNODE_FIELD nodes, an "unknown field" error
+ * will be reported; callers should eliminate all known fields during
  * transformation.
  *
  * If there's an error, this returns an empty Query and sets

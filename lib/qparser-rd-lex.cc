@@ -227,20 +227,20 @@ parse_term (struct _parse_state *s)
 }
 
 /**
- * label <- [[:wordchar:]]+ ":"
+ * field <- [[:wordchar:]]+ ":"
  */
 static _notmuch_qnode_t *
-parse_label (struct _parse_state *s)
+parse_field (struct _parse_state *s)
 {
-    /* A label is a sequence of word characters followed by a colon.
+    /* A field is a sequence of word characters followed by a colon.
      * Xapian allows anything except colon and whitespace, but
-     * restricts to registered labels.  Our syntax is not sensitive to
-     * the set of registered labels, so we're more restrictive in the
+     * restricts to registered fields.  Our syntax is not sensitive to
+     * the set of registered fields, so we're more restrictive in the
      * accepted characters.
      *
-     * In Xapian, labels for boolean prefixes dramatically affect the
+     * In Xapian, fields for boolean prefixes dramatically affect the
      * accepted lexical grammar of the following term.  We make no
-     * distinction; a label is a label.  This is okay because we parse
+     * distinction; a field is a field.  This is okay because we parse
      * the term itself much like how Xapian lexes boolean terms anyway
      * (and term splitting happens later, unlike in Xapian where it
      * happens during parsing).
@@ -250,20 +250,20 @@ parse_label (struct _parse_state *s)
 	++pos;
     if (pos == s->pos || pos == s->end || *pos != ':')
 	return NULL;
-    _notmuch_qnode_t *label =
-	_notmuch_qnode_create (s->ctx, QNODE_LABEL, &s->error);
-    if (! label)
+    _notmuch_qnode_t *field =
+	_notmuch_qnode_create (s->ctx, QNODE_FIELD, &s->error);
+    if (! field)
 	return NULL;
-    label->text =
+    field->text =
 	talloc_strndup (s->ctx, s->pos.raw (), pos.raw () - s->pos.raw ());
-    if (! label->text)
-	return parse_fail (s, "Out of memory allocating label");
+    if (! field->text)
+	return parse_fail (s, "Out of memory allocating field");
     s->pos = ++pos;
-    return label;
+    return field;
 }
 
 /**
- * group <- (!(AND / OR / NOT) ("+"/"-")? label? term)+
+ * group <- (!(AND / OR / NOT) ("+"/"-")? field? term)+
  */
 static _notmuch_qnode_t *
 parse_group (struct _parse_state *s)
@@ -303,8 +303,8 @@ parse_group (struct _parse_state *s)
 	    sub = node;
 	}
 
-	/* Optional label */
-	node = parse_label (s);
+	/* Optional field */
+	node = parse_field (s);
 	if (node) {
 	    _notmuch_qnode_add_child (sub, node, &s->error);
 	    sub = node;
