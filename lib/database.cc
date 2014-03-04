@@ -19,7 +19,7 @@
  */
 
 #include "database-private.h"
-#include "parse-time-vrp.h"
+#include "qparser.h"
 
 #include <iostream>
 
@@ -630,7 +630,7 @@ notmuch_database_open (const char *path,
     char *notmuch_path, *xapian_path;
     struct stat st;
     int err;
-    unsigned int i, version;
+    unsigned int version;
     static int initialized = 0;
 
     if (path == NULL) {
@@ -733,29 +733,8 @@ notmuch_database_open (const char *path,
 		INTERNAL_ERROR ("Malformed database last_thread_id: %s", str);
 	}
 
-	notmuch->query_parser = new Xapian::QueryParser;
 	notmuch->term_gen = new Xapian::TermGenerator;
 	notmuch->term_gen->set_stemmer (Xapian::Stem ("english"));
-	notmuch->value_range_processor = new Xapian::NumberValueRangeProcessor (NOTMUCH_VALUE_TIMESTAMP);
-	notmuch->date_range_processor = new ParseTimeValueRangeProcessor (NOTMUCH_VALUE_TIMESTAMP);
-
-	notmuch->query_parser->set_default_op (Xapian::Query::OP_AND);
-	notmuch->query_parser->set_database (*notmuch->xapian_db);
-	notmuch->query_parser->set_stemmer (Xapian::Stem ("english"));
-	notmuch->query_parser->set_stemming_strategy (Xapian::QueryParser::STEM_SOME);
-	notmuch->query_parser->add_valuerangeprocessor (notmuch->value_range_processor);
-	notmuch->query_parser->add_valuerangeprocessor (notmuch->date_range_processor);
-
-	for (i = 0; i < ARRAY_SIZE (BOOLEAN_PREFIX_EXTERNAL); i++) {
-	    prefix_t *prefix = &BOOLEAN_PREFIX_EXTERNAL[i];
-	    notmuch->query_parser->add_boolean_prefix (prefix->name,
-						       prefix->prefix);
-	}
-
-	for (i = 0; i < ARRAY_SIZE (PROBABILISTIC_PREFIX); i++) {
-	    prefix_t *prefix = &PROBABILISTIC_PREFIX[i];
-	    notmuch->query_parser->add_prefix (prefix->name, prefix->prefix);
-	}
     } catch (const Xapian::Error &error) {
 	fprintf (stderr, "A Xapian exception occurred opening database: %s\n",
 		 error.get_msg().c_str());
@@ -801,14 +780,8 @@ notmuch_database_close (notmuch_database_t *notmuch)
 
     delete notmuch->term_gen;
     notmuch->term_gen = NULL;
-    delete notmuch->query_parser;
-    notmuch->query_parser = NULL;
     delete notmuch->xapian_db;
     notmuch->xapian_db = NULL;
-    delete notmuch->value_range_processor;
-    notmuch->value_range_processor = NULL;
-    delete notmuch->date_range_processor;
-    notmuch->date_range_processor = NULL;
 }
 
 #if HAVE_XAPIAN_COMPACT
@@ -2217,4 +2190,31 @@ notmuch_database_get_all_tags (notmuch_database_t *db)
 	db->exception_reported = TRUE;
 	return NULL;
     }
+}
+
+/* Transform all fields in a query that correspond directly to
+ * database prefixes.
+ */
+_notmuch_qnode_t *
+_notmuch_database_transform_prefixes (notmuch_database_t *db,
+				      _notmuch_qnode_t *node,
+				      const char **error_out)
+{
+    size_t i;
+    for (i = 0; i < ARRAY_SIZE (BOOLEAN_PREFIX_EXTERNAL) && node; i++) {
+	prefix_t *prefix = &BOOLEAN_PREFIX_EXTERNAL[i];
+	node = _notmuch_qparser_literal_prefix (node, prefix->name,
+						prefix->prefix, true, error_out);
+    }
+
+    _notmuch_qparser_text_options_t text_opts;
+    text_opts.tgen = db->term_gen;
+    for (i = 0; i < ARRAY_SIZE (PROBABILISTIC_PREFIX) && node; i++) {
+	prefix_t *prefix = &PROBABILISTIC_PREFIX[i];
+	text_opts.db_prefix = prefix->prefix;
+	node = _notmuch_qparser_text_prefix (node, prefix->name, &text_opts,
+					     error_out);
+    }
+
+    return node;
 }

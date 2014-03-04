@@ -49,11 +49,10 @@ struct _notmuch_database {
     unsigned int last_doc_id;
     uint64_t last_thread_id;
 
-    Xapian::QueryParser *query_parser;
     Xapian::TermGenerator *term_gen;
-    Xapian::ValueRangeProcessor *value_range_processor;
-    Xapian::ValueRangeProcessor *date_range_processor;
 };
+
+typedef struct _notmuch_qnode _notmuch_qnode_t;
 
 /* Return the list of terms from the given iterator matching a prefix.
  * The prefix will be stripped from the strings in the returned list.
@@ -65,6 +64,11 @@ notmuch_string_list_t *
 _notmuch_database_get_terms_with_prefix (void *ctx, Xapian::TermIterator &i,
 					 Xapian::TermIterator &end,
 					 const char *prefix);
+
+_notmuch_qnode_t *
+_notmuch_database_transform_prefixes (notmuch_database_t *db,
+				      _notmuch_qnode_t *node,
+				      const char **error_out);
 
 #pragma GCC visibility pop
 

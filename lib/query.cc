@@ -20,6 +20,8 @@
 
 #include "notmuch-private.h"
 #include "database-private.h"
+#include "qparser.h"
+#include "parse-time-string.h"
 
 #include <glib.h> /* GHashTable, GPtrArray */
 
@@ -144,6 +146,72 @@ _notmuch_messages_destructor (notmuch_mset_messages_t *messages)
     return 0;
 }
 
+/* Query field transformer for "date:" terms.
+ */
+static _notmuch_qnode_t *
+date_transformer (_notmuch_qnode_t *terms, unused (void *opaque),
+		  const char **error_out)
+{
+    void *local = talloc_new (terms);
+    const char *begin, *end;
+    time_t now, lo, hi;
+    _notmuch_qnode_t *node = NULL;
+
+    if ((end = strstr (terms->text, ".."))) {
+	begin = talloc_strndup (local, terms->text, end - terms->text);
+	if (! begin) {
+	    *error_out = "Out of memory allocating date";
+	    goto DONE;
+	}
+	end += 2;
+    } else {
+	begin = end = terms->text;
+    }
+
+    /* Use the same 'now' for begin and end. */
+    if (time (&now) == (time_t) -1) {
+	*error_out = "Failed to get current time";
+	goto DONE;
+    }
+
+    /* Parse end points */
+    if (begin[0]) {
+	if (parse_time_string (begin, &lo, &now, PARSE_TIME_ROUND_DOWN)) {
+	    *error_out = talloc_asprintf (terms, "Malformed date \"%s\"", begin);
+	    goto DONE;
+	}
+    }
+    if (end[0]) {
+	if (parse_time_string (end, &hi, &now, PARSE_TIME_ROUND_UP_INCLUSIVE)) {
+	    *error_out = talloc_asprintf (terms, "Malformed date \"%s\"", end);
+	    goto DONE;
+	}
+    }
+
+    /* Create query */
+    node = _notmuch_qnode_create (terms, QNODE_QUERY, error_out);
+    if (! node)
+	goto DONE;
+    if (begin[0] && end[0]) {
+	node->query = Xapian::Query (
+	    Xapian::Query::OP_VALUE_RANGE, NOTMUCH_VALUE_TIMESTAMP,
+	    Xapian::sortable_serialise ((double) lo),
+	    Xapian::sortable_serialise ((double) hi));
+    } else if (begin[0]) {
+	node->query = Xapian::Query (
+	    Xapian::Query::OP_VALUE_GE, NOTMUCH_VALUE_TIMESTAMP,
+	    Xapian::sortable_serialise ((double) lo));
+    } else {
+	node->query = Xapian::Query (
+	    Xapian::Query::OP_VALUE_LE, NOTMUCH_VALUE_TIMESTAMP,
+	    Xapian::sortable_serialise ((double) hi));
+    }
+
+ DONE:
+    talloc_free (local);
+    return node;
+}
+
 /* Parse a query string.  If there is an error parsing the query
  * (e.g., a syntax error or out-of-memory), returns an empty query and
  * sets *error_out to the error message, which will be either static
@@ -157,25 +225,31 @@ _notmuch_parse_query (notmuch_query_t *query, const char **error_out)
 					       _find_prefix ("type"),
 					       "mail"));
     Xapian::Query string_query;
-    unsigned int flags = (Xapian::QueryParser::FLAG_BOOLEAN |
-			  Xapian::QueryParser::FLAG_PHRASE |
-			  Xapian::QueryParser::FLAG_LOVEHATE |
-			  Xapian::QueryParser::FLAG_BOOLEAN_ANY_CASE |
-			  Xapian::QueryParser::FLAG_WILDCARD |
-			  Xapian::QueryParser::FLAG_PURE_NOT);
-    if (strcmp (query_string, "") == 0 ||
-	strcmp (query_string, "*") == 0) {
+    _notmuch_qnode_t *root;
+
+    if (strcmp (query_string, "") == 0)
 	return mail_query;
-    } else {
-	try {
-	    string_query = query->notmuch->query_parser->
-		parse_query (query_string, flags);
-	} catch (const Xapian::Error &error) {
-	    *error_out = talloc_strdup (query, error.get_msg ().c_str ());
-	    return Xapian::Query ();
-	}
-	return Xapian::Query (Xapian::Query::OP_AND, mail_query, string_query);
-    }
+
+    if (! (root = _notmuch_qparser_parse (query, query_string, error_out)))
+	return Xapian::Query ();
+
+    /* Transform labeled terms */
+    if (! (root = _notmuch_database_transform_prefixes (query->notmuch, root,
+							error_out)))
+	return Xapian::Query ();
+    if (! (root = _notmuch_qparser_field_transform (
+	       root, "date", date_transformer, NULL, error_out)))
+	return Xapian::Query ();
+
+    /* Transform unlabeled terms */
+    _notmuch_qparser_text_options_t opts;
+    opts.tgen = query->notmuch->term_gen;
+    opts.db_prefix = NULL;
+    if (! (root = _notmuch_qparser_text_prefix (root, NULL, &opts, error_out)))
+	return Xapian::Query ();
+
+    string_query = _notmuch_qparser_generate (query, root, error_out);
+    return Xapian::Query (Xapian::Query::OP_AND, mail_query, string_query);
 }
 
 /* Return a query that matches messages with the excluded tags
@@ -222,6 +296,7 @@ notmuch_query_search_messages (notmuch_query_t *query)
 	final_query = _notmuch_parse_query (query, &error_msg);
 	if (error_msg) {
 	    fprintf (stderr, "%s\n", error_msg);
+	    talloc_free (messages);
 	    return NULL;
 	}
 
