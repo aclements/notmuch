@@ -6,7 +6,7 @@ test_description='"notmuch show"'
 add_email_corpus
 
 test_begin_subtest "exit code for show invalid query"
-notmuch show foo..
+notmuch show and
 exit_code=$?
 test_expect_equal 1 $exit_code
 
