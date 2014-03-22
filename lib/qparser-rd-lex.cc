@@ -198,6 +198,50 @@ parse_term (struct _parse_state *s)
 	return node;
     }
 
+    // XXX Is this compatible with Xapian boolean parsing?  What if
+    // there's a ()" or space?
+    //
+    // It is compatible in the quoted case (except that we don't
+    // support "fancy quotes").
+    //
+    // It doesn't attempt to be compatible in the parenthesized case
+    // because Xapian's handling of that is really strange and nobody
+    // uses it.
+    //
+    // This is not compatible in the general case.  In the unquoted
+    // case, Xapian consumes everything except control characters, ' '
+    // and ')'.  This means it'll consume at least '(' and '"' where
+    // we won't.  We'll also stop at other Unicode whitespace.
+    //
+    // make_boolean_term in string-util.c *almost* works for this
+    // except that it may include an unescaped '('.  This is actually
+    // wrong for Xapian, too, since a '(' at the beginning changes how
+    // it consumes the term.  (Now fixed, but this could still be a
+    // problem for old dumps.  OTOH, notmuch restore parses the ids
+    // directly and in a way that doesn't support Xapian's generality
+    // anyway, so maybe it doesn't really matter.)
+    //
+    // notmuch-escape-boolean-term had similar problems, but is now
+    // fixed.
+    //
+    // Stopping at any Unicode whitespace makes it tricky to minimally
+    // quote boolean terms in callers.  Then again, attempting to
+    // handle non-ASCII characters is what got
+    // notmuch-escape-boolean-term into trouble.
+    //
+    // We could stop at ASCII whitespace only.  Applying this
+    // generally, Unicode-only whitespace would turn into an implicit
+    // phrase connector.
+    //
+    // We could easily consume " in the middle of a term.  It would be
+    // weird to paste together a term and a quoted term with no space
+    // between anyway.
+    //
+    // We could also consume ( in the middle of a term.  I would be
+    // forlorn to do this, since parens are clearly balanced.
+    // However, this would keep old dumps working (as much as they
+    // worked before).
+
     /* Consume a (possibly empty) term up to the next (, ), ", or
      * whitespace.  We'll word-split this after parsing.
      *
