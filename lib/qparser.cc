@@ -382,6 +382,12 @@ generate_group (struct _generate_state *s, _notmuch_qnode_t *node)
     return sub;
 }
 
+// XXX This approach of applying the inner-most prefix *and* stripping
+// the prefix nodes as we transform is asking for trouble.  A pass may
+// transform something and strip its prefix, then another pass may
+// think that a previously outer prefix is now the inner-most prefix
+// for the transformed subtree.
+
 static Xapian::Query
 generate (struct _generate_state *s, _notmuch_qnode_t *node)
 {
