@@ -122,7 +122,7 @@ expand_wildcard (Xapian::Database db, const char *term, size_t limit,
     for (; i != end; i++) {
 	if (limit && qs.size () == limit) {
 	    if (! *error_out)
-		*error_out = "Wildcard expands to too many terms; please be more specific";
+		*error_out = "Wildcard matches too many terms; please be more specific";
 	    return Xapian::Query ();
 	}
 
