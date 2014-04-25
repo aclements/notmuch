@@ -212,6 +212,107 @@ date_transformer (_notmuch_qnode_t *terms, unused (void *opaque),
     return node;
 }
 
+/* A posting source that returns documents where a value matches a
+ * regexp.
+ */
+class _regexp_posting_source : public Xapian::PostingSource
+{
+    const Xapian::valueno slot_;
+    regex_t regexp_;
+    Xapian::Database db_;
+    bool started_;
+    Xapian::ValueIterator it_, end_;
+
+    /* No copying */
+    _regexp_posting_source (const _regexp_posting_source &);
+    _regexp_posting_source &operator=(const _regexp_posting_source &);
+
+public:
+    _regexp_posting_source (Xapian::valueno slot, const char *regexp)
+	: slot_(slot)
+    {
+	int r = regcomp (&regexp_, regexp, REG_EXTENDED | REG_NOSUB);
+	if (r != 0)
+	    /* XXX Report a query syntax error using regerror */
+	    throw "regcomp failed";
+    }
+
+    ~_regexp_posting_source ()
+    {
+	regfree (&regexp_);
+    }
+
+    void init (const Xapian::Database &db)
+    {
+	db_ = db;
+	it_ = db_.valuestream_begin (slot_);
+	end_ = db.valuestream_end (slot_);
+	started_ = false;
+    }
+
+    Xapian::doccount get_termfreq_min () const
+    {
+	return 0;
+    }
+
+    Xapian::doccount get_termfreq_est () const
+    {
+	return get_termfreq_max () / 2;
+    }
+
+    Xapian::doccount get_termfreq_max () const
+    {
+	return db_.get_value_freq (slot_);
+    }
+
+    Xapian::docid get_docid () const
+    {
+	return it_.get_docid ();
+    }
+
+    bool at_end () const
+    {
+	return it_ == end_;
+    }
+
+    void next (unused (Xapian::weight min_wt))
+    {
+	if (started_ && ! at_end ())
+	    ++it_;
+	started_ = true;
+
+	for (; ! at_end (); ++it_) {
+	    std::string value = *it_;
+	    if (regexec (&regexp_, value.c_str (), 0, NULL, 0) == 0)
+		break;
+	}
+    }
+};
+
+static int
+_regexp_posting_source_destructor (_regexp_posting_source *ps)
+{
+    ps->~_regexp_posting_source();
+    return 0;
+}
+
+/* Query field transformer for "subjectre:". */
+static _notmuch_qnode_t *
+subjectre_transformer (_notmuch_qnode_t *terms, unused (void *opaque),
+		       const char **error_out)
+{
+    _notmuch_qnode_t *node =
+	_notmuch_qnode_create (terms, QNODE_QUERY, error_out);
+    if (! node)
+	return node;
+    _regexp_posting_source *ps =
+	new (talloc (node, _regexp_posting_source)) _regexp_posting_source (
+	    NOTMUCH_VALUE_SUBJECT, terms->text);
+    talloc_set_destructor (ps, _regexp_posting_source_destructor);
+    node->query = Xapian::Query (ps);
+    return node;
+}
+
 /* Parse a query string.  If there is an error parsing the query
  * (e.g., a syntax error or out-of-memory), returns an empty query and
  * sets *error_out to the error message, which will be either static
@@ -239,6 +340,9 @@ _notmuch_parse_query (notmuch_query_t *query, const char **error_out)
 	return Xapian::Query ();
     if (! (root = _notmuch_qparser_field_transform (
 	       root, "date", date_transformer, NULL, error_out)))
+	return Xapian::Query ();
+    if (! (root = _notmuch_qparser_field_transform (
+	       root, "subjectre", subjectre_transformer, NULL, error_out)))
 	return Xapian::Query ();
 
     /* Transform unlabeled terms */
