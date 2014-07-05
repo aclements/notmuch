@@ -1234,6 +1234,19 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 	timer_is_active = TRUE;
     }
 
+    /* Figure out how much total work we need to do. */
+    if (new_features &
+	(NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_BOOL_FOLDER)) {
+	notmuch_query_t *query = notmuch_query_create (notmuch, "");
+	total += notmuch_query_count_messages (query);
+	notmuch_query_destroy (query);
+    }
+    if (new_features & NOTMUCH_FEATURE_DIRECTORY_DOCS) {
+	t_end = db->allterms_end ("XTIMESTAMP");
+	for (t = db->allterms_begin ("XTIMESTAMP"); t != t_end; t++)
+	    ++total;
+    }
+
     /* Perform the upgrade in a transaction. */
     db->begin_transaction (true);
 
@@ -1248,8 +1261,6 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 	notmuch_messages_t *messages;
 	notmuch_message_t *message;
 	char *filename;
-
-	total = notmuch_query_count_messages (query);
 
 	for (messages = notmuch_query_search_messages (query);
 	     notmuch_messages_valid (messages);
@@ -1333,6 +1344,8 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 
 		db->delete_document (*p);
 	    }
+
+	    ++count;
 	}
     }
 
