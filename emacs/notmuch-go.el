@@ -19,39 +19,30 @@
 ;;
 ;; Authors: Austin Clements <aclements@csail.mit.edu>
 
-;; XXX Make this a defcustom
-;; XXX Or derive somehow from saved searches?
-(defvar notmuch-go-searches
-  `((,(kbd "i") "inbox" "tag:inbox")
-    (,(kbd "u") "unread" "tag:unread")
-    (,(kbd "f") "flagged" "tag:flagged")
-    (,(kbd "t") "sent" "tag:sent")
-    (,(kbd "d") "drafts" "tag:draft")
-    (,(kbd "a") "all mail" "*")
-
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ;; (,(kbd "z") "test" "test")
-    ))
-;; (makunbound 'notmuch-go-searches)
-
 (defun notmuch-go-search ()
   (interactive)
-  (notmuch-go
-   (mapcar (lambda (search)
-	     ;; XXX Add counts, but do it asynchronously so this stays
-	     ;; snappy
-	     (list (first search) (second search)
-		   `(lambda ()
-		      (notmuch-search ',(third search)
-				      notmuch-search-oldest-first))))
-	   notmuch-go-searches)
-   "Go to "))
+
+  ;; Build the action map
+  (let (action-map)
+    (dolist (saved-search notmuch-saved-searches)
+      (let* ((saved-search (notmuch-hello-saved-search-to-plist saved-search))
+	     (key (plist-get saved-search :key)))
+	(when key
+	  (let ((name (plist-get saved-search :name))
+		(query (plist-get saved-search :query))
+		(oldest-first
+		 (case (plist-get saved-search :sort-order)
+		   (newest-first nil)
+		   (oldest-first t)
+		   (otherwise (default-value notmuch-search-oldest-first)))))
+	    (push (list key name
+			`(lambda () (notmuch-search ',query ',oldest-first)))
+		  action-map)))))
+    (setq action-map (nreverse action-map))
+
+    (if action-map
+	(notmuch-go action-map "Go to ")
+      (error "No shortcut keys for saved searches.  Please customize notmuch-saved-searches."))))
 
 (defvar notmuch-go--action nil)
 
