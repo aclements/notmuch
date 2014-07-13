@@ -20,6 +20,12 @@
 ;; Authors: Austin Clements <aclements@csail.mit.edu>
 
 (defun notmuch-go-search ()
+  "Jump to a saved search by shortcut key.
+
+This prompts for and performs a saved search using the shortcut
+keys configured in the :key property of `notmuch-saved-searches'.
+Typically these shortcuts are a single key long, so this is a
+fast way to jump to a saved search from anywhere in Notmuch."
   (interactive)
 
   ;; Build the action map
