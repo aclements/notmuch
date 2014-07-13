@@ -130,8 +130,11 @@ For example, if you wanted to remove an \"inbox\" tag and add an
     (define-key map "m" 'notmuch-mua-new-mail)
     (define-key map "=" 'notmuch-refresh-this-buffer)
     (define-key map "G" 'notmuch-poll-and-refresh-this-buffer)
+    (define-key map "j" 'notmuch-jump-search)
     map)
   "Keymap shared by all notmuch modes.")
+
+(autoload 'notmuch-jump-search "notmuch-jump" "Jump to a saved search by shortcut key." t)
 
 ;; By default clicking on a button does not select the window
 ;; containing the button (as opposed to clicking on a widget which
