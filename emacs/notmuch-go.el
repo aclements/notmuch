@@ -55,8 +55,6 @@
 
 (defvar notmuch-go--action nil)
 
-(defvar notmuch-go--can-split-root 'unknown)
-
 (defun notmuch-go (action-map prompt)
   "Interactively prompt for one of the keys in ACTION-MAP.
 
@@ -75,85 +73,40 @@ be null, in which case the action will still be bound, but will
 not appear in the pop-up buffer.
 "
 
-  ;; Emacs 24 always lets us split the frame root window, but Emacs 23
-  ;; and older don't if it's a container window.  Unfortunately,
-  ;; there's no good way to tell whether this is supported other than
-  ;; just trying it.  So try it.
-  (when (eq notmuch-go--can-split-root 'unknown)
-    (condition-case nil
-	(save-window-excursion
-	  (when (window-live-p (frame-root-window))
-	    ;; Make sure the frame root is a container window
-	    (split-window))
-	  (split-window (frame-root-window))
-	  (setq notmuch-go--can-split-root t))
-      (wrong-type-argument
-       (setq notmuch-go--can-split-root nil))))
+  (let* ((items (notmuch-go--format-actions action-map))
+	 ;; Format the table of bindings and the full prompt
+	 (table
+	  (with-temp-buffer
+	    (notmuch-go--insert-items (window-body-width) items)
+	    (buffer-string)))
+	 (prompt-text
+	  (if (eq this-original-command this-command)
+	      ;; Make it look like we're just part of any regular
+	      ;; submap prompt (like C-x, C-c, etc.)
+	      (concat (format-kbd-macro (this-command-keys)) "-")
+	    ;; We were invoked through something like M-x
+	    prompt))
+	 (full-prompt
+	  (concat table "\n\n"
+		  (propertize prompt-text 'face 'minibuffer-prompt)))
+	 ;; By default, the minibuffer applies the minibuffer face to
+	 ;; the entire prompt.  However, we want to clearly
+	 ;; distinguish bindings (which we put in the prompt face
+	 ;; ourselves) from their labels, so disable the minibuffer's
+	 ;; own re-face-ing.
+	 (minibuffer-prompt-properties
+	  (notmuch-go--plist-delete (copy-sequence minibuffer-prompt-properties)
+				    'face))
+	 ;; Build the keymap with our bindings
+	 (minibuffer-map (notmuch-go--make-keymap action-map))
+	 ;; The bindings save the the action in notmuch-go--action
+	 (notmuch-go--action nil))
+    ;; Read the action
+    (read-from-minibuffer full-prompt nil minibuffer-map)
 
-  (setq notmuch-go--action nil)
-  (let ((items (notmuch-go--format-actions action-map))
-	buffer window height)
-    (unwind-protect
-	(progn
-	  (setq buffer (get-buffer-create "*notmuch-go*"))
-
-	  ;; Fill the action buffer
-	  ;; XXX This should act like a completion buffer and allow
-	  ;; mouse and keyboard selection
-	  (with-current-buffer buffer
-	    (setq buffer-read-only t)
-	    (let ((window-width (if notmuch-go--can-split-root
-				    (window-body-width (minibuffer-window))
-				  (window-body-width)))
-		  (inhibit-read-only t))
-	      (erase-buffer)
-	      (remove-overlays)
-	      (notmuch-go--insert-items window-width items))
-	    (goto-char (point-min))
-
-	    (setq height (count-lines (point-min) (point-max)))
-
-	    ;; If we can show the action window right over the
-	    ;; minibuffer, then hide the mode line to make it look
-	    ;; like this blends right in to the minibuffer.
-	    (if notmuch-go--can-split-root
-		(setq mode-line-format nil)
-	      ;; Increase height to allow for mode-line in window
-	      (setq height (+ 1 height)))
-
-	    ;; Unless the user selects this window, don't show the
-	    ;; cursor in it because it will cover up the bindings.
-	    (setq cursor-in-non-selected-windows nil))
-
-	  ;; Show the action window
-	  (let ((window-min-height 1))
-	    (setq window
-		  (if notmuch-go--can-split-root
-		      (split-window (frame-root-window) (- height))
-		    (split-window nil (- (window-height) height)))))
-	  (select-window window)
-	  (switch-to-buffer buffer)
-
-	  ;; Read the action
-	  (let ((minibuffer-map (notmuch-go--make-keymap action-map))
-		(prompt
-		 (if (eq this-original-command this-command)
-		     ;; Make it look like we're just part of a
-		     ;; submap prompt
-		     (concat (format-kbd-macro (this-command-keys)) " ")
-		   ;; We were invoked through something like M-x
-		   prompt)))
-	    (read-from-minibuffer prompt nil minibuffer-map)))
-
-      ;; Tear down the buffer and window
-      ;; XXX Use save-window-excursion to guarantee we return to the
-      ;; same window configuration?
-      (when window (delete-window window))
-      (when buffer (kill-buffer buffer))))
-
-  ;; If we got an action, do it
-  (when notmuch-go--action
-    (funcall notmuch-go--action)))
+    ;; If we got an action, do it
+    (when notmuch-go--action
+      (funcall notmuch-go--action))))
 
 (defun notmuch-go--format-actions (action-map)
   "Format the actions in ACTION-MAP.
@@ -208,12 +161,14 @@ buffer."
 	   (exit-minibuffer))))
     map))
 
-(defvar notmuch-go-minibuffer-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map minibuffer-local-map)
-    ;; Make this like a special-mode keymap, with no self-insert-command
-    (suppress-keymap map)
-    map))
+(defun notmuch-go--plist-delete (plist property)
+  (let* ((xplist (cons nil plist))
+	 (pred xplist))
+    (while (cdr pred)
+      (when (eq (cadr pred) property)
+	(setcdr pred (cdddr pred)))
+      (setq pred (cddr pred)))
+    (cdr xplist)))
 
 (unless (fboundp 'window-body-width)
   ;; Compatibility for Emacs pre-24
@@ -221,11 +176,12 @@ buffer."
     (let ((edges (window-inside-edges window)))
       (- (caddr edges) (car edges)))))
 
-;; XXX Unused
-(unless (fboundp 'window-body-height)
-  (defun window-body-height (&optional window)
-    (let ((edges (window-inside-edges window)))
-      (- (cadddr edges) (cadr edges)))))
+(defvar notmuch-go-minibuffer-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map minibuffer-local-map)
+    ;; Make this like a special-mode keymap, with no self-insert-command
+    (suppress-keymap map)
+    map)
+  "Base keymap for notmuch-go's minibuffer keymap.")
 
-;;(global-set-key (kbd "C-c g") #'notmuch-go-search)
 (define-key notmuch-common-keymap (kbd "g") #'notmuch-go-search)
