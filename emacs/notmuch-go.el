@@ -19,6 +19,11 @@
 ;;
 ;; Authors: Austin Clements <aclements@csail.mit.edu>
 
+(eval-when-compile (require 'cl))
+
+(require 'notmuch-hello)
+
+;;;###autoload
 (defun notmuch-go-search ()
   "Jump to a saved search by shortcut key.
 
@@ -147,6 +152,14 @@ buffer."
       (when items
 	(insert "\n")))))
 
+(defvar notmuch-go-minibuffer-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map minibuffer-local-map)
+    ;; Make this like a special-mode keymap, with no self-insert-command
+    (suppress-keymap map)
+    map)
+  "Base keymap for notmuch-go's minibuffer keymap.")
+
 (defun notmuch-go--make-keymap (action-map)
   "Translate ACTION-MAP into a minibuffer keymap."
   (let ((map (make-sparse-keymap)))
@@ -172,13 +185,3 @@ buffer."
   (defun window-body-width (&optional window)
     (let ((edges (window-inside-edges window)))
       (- (caddr edges) (car edges)))))
-
-(defvar notmuch-go-minibuffer-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map minibuffer-local-map)
-    ;; Make this like a special-mode keymap, with no self-insert-command
-    (suppress-keymap map)
-    map)
-  "Base keymap for notmuch-go's minibuffer keymap.")
-
-(define-key notmuch-common-keymap (kbd "g") #'notmuch-go-search)
