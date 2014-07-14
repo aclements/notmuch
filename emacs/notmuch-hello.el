@@ -102,7 +102,7 @@ a plist. Supported properties are
 
   :name            Name of the search (required).
   :query           Search to run (required).
-  :key             Optional shortcut key for `notmuch-go-search'.
+  :key             Optional shortcut key for `notmuch-jump-search'.
   :count-query     Optional extra query to generate the count
                    shown. If not present then the :query property
                    is used.

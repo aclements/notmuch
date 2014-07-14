@@ -1,4 +1,4 @@
-;; notmuch-go.el --- notmuch is going places.
+;; notmuch-jump.el --- User-friendly shortcut keys
 ;;
 ;; Copyright © Austin Clements
 ;;
@@ -18,13 +18,14 @@
 ;; along with Notmuch.  If not, see <http://www.gnu.org/licenses/>.
 ;;
 ;; Authors: Austin Clements <aclements@csail.mit.edu>
+;;          David Edmondson <dme@dme.org>
 
 (eval-when-compile (require 'cl))
 
 (require 'notmuch-hello)
 
 ;;;###autoload
-(defun notmuch-go-search ()
+(defun notmuch-jump-search ()
   "Jump to a saved search by shortcut key.
 
 This prompts for and performs a saved search using the shortcut
@@ -52,12 +53,12 @@ fast way to jump to a saved search from anywhere in Notmuch."
     (setq action-map (nreverse action-map))
 
     (if action-map
-	(notmuch-go action-map "Go to ")
+	(notmuch-jump action-map "Search ")
       (error "No shortcut keys for saved searches.  Please customize notmuch-saved-searches."))))
 
-(defvar notmuch-go--action nil)
+(defvar notmuch-jump--action nil)
 
-(defun notmuch-go (action-map prompt)
+(defun notmuch-jump (action-map prompt)
   "Interactively prompt for one of the keys in ACTION-MAP.
 
 Displays a pop-up temporary buffer with a summary of all bindings
@@ -75,11 +76,11 @@ be null, in which case the action will still be bound, but will
 not appear in the pop-up buffer.
 "
 
-  (let* ((items (notmuch-go--format-actions action-map))
+  (let* ((items (notmuch-jump--format-actions action-map))
 	 ;; Format the table of bindings and the full prompt
 	 (table
 	  (with-temp-buffer
-	    (notmuch-go--insert-items (window-body-width) items)
+	    (notmuch-jump--insert-items (window-body-width) items)
 	    (buffer-string)))
 	 (prompt-text
 	  (if (eq this-original-command this-command)
@@ -97,20 +98,21 @@ not appear in the pop-up buffer.
 	 ;; ourselves) from their labels, so disable the minibuffer's
 	 ;; own re-face-ing.
 	 (minibuffer-prompt-properties
-	  (notmuch-go--plist-delete (copy-sequence minibuffer-prompt-properties)
-				    'face))
+	  (notmuch-jump--plist-delete
+	   (copy-sequence minibuffer-prompt-properties)
+	   'face))
 	 ;; Build the keymap with our bindings
-	 (minibuffer-map (notmuch-go--make-keymap action-map))
-	 ;; The bindings save the the action in notmuch-go--action
-	 (notmuch-go--action nil))
+	 (minibuffer-map (notmuch-jump--make-keymap action-map))
+	 ;; The bindings save the the action in notmuch-jump--action
+	 (notmuch-jump--action nil))
     ;; Read the action
     (read-from-minibuffer full-prompt nil minibuffer-map)
 
     ;; If we got an action, do it
-    (when notmuch-go--action
-      (funcall notmuch-go--action))))
+    (when notmuch-jump--action
+      (funcall notmuch-jump--action))))
 
-(defun notmuch-go--format-actions (action-map)
+(defun notmuch-jump--format-actions (action-map)
   "Format the actions in ACTION-MAP.
 
 Returns a list of strings, one for each item with a label in
@@ -133,7 +135,7 @@ buffer."
 		 " " desc)))
 	    action-map)))
 
-(defun notmuch-go--insert-items (width items)
+(defun notmuch-jump--insert-items (width items)
   "Make a table of ITEMS up to WIDTH wide in the current buffer."
   (let* ((nitems (length items))
 	 (col-width (+ 3 (apply #'max (mapcar #'string-width items))))
@@ -152,26 +154,26 @@ buffer."
       (when items
 	(insert "\n")))))
 
-(defvar notmuch-go-minibuffer-map
+(defvar notmuch-jump-minibuffer-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
     ;; Make this like a special-mode keymap, with no self-insert-command
     (suppress-keymap map)
     map)
-  "Base keymap for notmuch-go's minibuffer keymap.")
+  "Base keymap for notmuch-jump's minibuffer keymap.")
 
-(defun notmuch-go--make-keymap (action-map)
+(defun notmuch-jump--make-keymap (action-map)
   "Translate ACTION-MAP into a minibuffer keymap."
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map notmuch-go-minibuffer-map)
+    (set-keymap-parent map notmuch-jump-minibuffer-map)
     (dolist (action action-map)
       (define-key map (first action)
 	`(lambda () (interactive)
-	   (setq notmuch-go--action ',(third action))
+	   (setq notmuch-jump--action ',(third action))
 	   (exit-minibuffer))))
     map))
 
-(defun notmuch-go--plist-delete (plist property)
+(defun notmuch-jump--plist-delete (plist property)
   (let* ((xplist (cons nil plist))
 	 (pred xplist))
     (while (cdr pred)
