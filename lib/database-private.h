@@ -41,10 +41,14 @@ struct _notmuch_database {
 
     char *path;
 
-    notmuch_bool_t needs_upgrade;
     notmuch_database_mode_t mode;
     int atomic_nesting;
     Xapian::Database *xapian_db;
+
+    /* Bit mask of features used by this database.  Features are
+     * named, independent aspects of the database schema.  This is a
+     * bitwise-OR of NOTMUCH_FEATURE_* values (below). */
+    unsigned int features;
 
     unsigned int last_doc_id;
     uint64_t last_thread_id;
@@ -54,6 +58,57 @@ struct _notmuch_database {
     Xapian::ValueRangeProcessor *value_range_processor;
     Xapian::ValueRangeProcessor *date_range_processor;
 };
+
+/* Bit masks for _notmuch_database::features. */
+enum {
+    /* If set, file names are stored in "file-direntry" terms.  If
+     * unset, file names are stored in document data.
+     *
+     * Introduced: version 1.  Implementation support: both for read;
+     * required for write. */
+    NOTMUCH_FEATURE_FILE_TERMS = 1 << 0,
+
+    /* If set, directory timestamps are stored in documents with
+     * XDIRECTORY terms and relative paths.  If unset, directory
+     * timestamps are stored in documents with XTIMESTAMP terms and
+     * absolute paths.
+     *
+     * Introduced: version 1.  Implementation support: required. */
+    NOTMUCH_FEATURE_DIRECTORY_DOCS = 1 << 1,
+
+    /* If set, the from, subject, and message-id headers are stored in
+     * message document values.  If unset, message documents *may*
+     * have these values, but if the value is empty, it must be
+     * retrieved from the message file.
+     *
+     * Introduced: optional in version 1, required as of version 3.
+     * Implementation support: both.
+     */
+    NOTMUCH_FEATURE_FROM_SUBJECT_ID_VALUES = 1 << 2,
+
+    /* If set, folder terms are boolean and path terms exist.  If
+     * unset, folder terms are probabilistic and stemmed and path
+     * terms do not exist.
+     *
+     * Introduced: version 2.  Implementation support: required. */
+    NOTMUCH_FEATURE_BOOL_FOLDER = 1 << 3,
+};
+
+/* Prior to database version 3, features were implied by the database
+ * version number, so hard-code them for earlier versions. */
+#define NOTMUCH_FEATURES_V0 (0)
+#define NOTMUCH_FEATURES_V1 (NOTMUCH_FEATURES_V0 | NOTMUCH_FEATURE_FILE_TERMS | \
+			     NOTMUCH_FEATURE_DIRECTORY_DOCS)
+#define NOTMUCH_FEATURES_V2 (NOTMUCH_FEATURES_V1 | NOTMUCH_FEATURE_BOOL_FOLDER)
+
+/* Current database features.  If any of these are missing from a
+ * database, request an upgrade.
+ * NOTMUCH_FEATURE_FROM_SUBJECT_ID_VALUES is not included because
+ * upgrade doesn't currently introduce the feature (though brand new
+ * databases will have it). */
+#define NOTMUCH_FEATURES_CURRENT \
+    (NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_DIRECTORY_DOCS | \
+     NOTMUCH_FEATURE_BOOL_FOLDER)
 
 /* Return the list of terms from the given iterator matching a prefix.
  * The prefix will be stripped from the strings in the returned list.
