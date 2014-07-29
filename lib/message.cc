@@ -40,6 +40,9 @@ struct visible _notmuch_message {
     notmuch_message_list_t *replies;
     unsigned long flags;
 
+    /* Message document modified since last sync */
+    notmuch_bool_t modified;
+
     Xapian::Document doc;
     Xapian::termcount termpos;
 };
@@ -507,6 +510,7 @@ _notmuch_message_remove_terms (notmuch_message_t *message, const char *prefix)
 
 	try {
 	    message->doc.remove_term ((*i));
+	    message->modified = TRUE;
 	} catch (const Xapian::InvalidArgumentError) {
 	    /* Ignore failure to remove non-existent term. */
 	}
@@ -760,6 +764,7 @@ void
 _notmuch_message_clear_data (notmuch_message_t *message)
 {
     message->doc.set_data ("");
+    message->modified = TRUE;
 }
 
 static void
@@ -949,6 +954,7 @@ _notmuch_message_set_header_values (notmuch_message_t *message,
 			    Xapian::sortable_serialise (time_value));
     message->doc.add_value (NOTMUCH_VALUE_FROM, from);
     message->doc.add_value (NOTMUCH_VALUE_SUBJECT, subject);
+    message->modified = TRUE;
 }
 
 /* Synchronize changes made to message->doc out into the database. */
@@ -960,8 +966,12 @@ _notmuch_message_sync (notmuch_message_t *message)
     if (message->notmuch->mode == NOTMUCH_DATABASE_MODE_READ_ONLY)
 	return;
 
+    if (! message->modified)
+	return;
+
     db = static_cast <Xapian::WritableDatabase *> (message->notmuch->xapian_db);
     db->replace_document (message->doc_id, message->doc);
+    message->modified = FALSE;
 }
 
 /* Delete a message document from the database. */
@@ -1018,6 +1028,7 @@ _notmuch_message_add_term (notmuch_message_t *message,
 	return NOTMUCH_PRIVATE_STATUS_TERM_TOO_LONG;
 
     message->doc.add_term (term, 0);
+    message->modified = TRUE;
 
     talloc_free (term);
 
@@ -1084,6 +1095,7 @@ _notmuch_message_remove_term (notmuch_message_t *message,
 
     try {
 	message->doc.remove_term (term);
+	message->modified = TRUE;
     } catch (const Xapian::InvalidArgumentError) {
 	/* We'll let the philosopher's try to wrestle with the
 	 * question of whether failing to remove that which was not
