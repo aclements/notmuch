@@ -52,6 +52,8 @@ indicate user-supplied values):
 
 -  date:<since>..<until>
 
+-  lastmod:<since>..<until>
+
 The **from:** prefix is used to match the name or address of the sender
 of an email message.
 
@@ -117,6 +119,12 @@ The time range can also be specified using timestamps with a syntax of:
 
 Each timestamp is a number representing the number of seconds since
 1970-01-01 00:00:00 UTC.
+
+The **lastmod:** prefix can be used to restrict the result by the
+database revision number of when messages were last modified (tags
+were added/removed or filenames changed).  This is usually used in
+conjunction with the **--db-revision** argument to **notmuch search**
+to find messages that have changed since an earlier query.
 
 In addition to individual terms, multiple terms can be combined with
 Boolean operators ( **and**, **or**, **not** , etc.). Each term in the
