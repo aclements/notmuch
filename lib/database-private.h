@@ -52,6 +52,9 @@ struct _notmuch_database {
 
     unsigned int last_doc_id;
     uint64_t last_thread_id;
+    /* Highest revision number when the database was opened.  Changes
+     * should be recorded under revision+1 */
+    unsigned int revision;
 
     Xapian::QueryParser *query_parser;
     Xapian::TermGenerator *term_gen;
@@ -92,6 +95,12 @@ enum {
      *
      * Introduced: version 2.  Implementation support: required. */
     NOTMUCH_FEATURE_BOOL_FOLDER = 1 << 3,
+
+    /* If set, messages store the revision number of the last
+     * modification in NOTMUCH_VALUE_LAST_MOD.
+     *
+     * Introduced: version 3.  Implementation support: both. */
+    NOTMUCH_FEATURE_LAST_MOD = 1 << 4,
 };
 
 /* Prior to database version 3, features were implied by the database
@@ -108,7 +117,7 @@ enum {
  * databases will have it). */
 #define NOTMUCH_FEATURES_CURRENT \
     (NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_DIRECTORY_DOCS | \
-     NOTMUCH_FEATURE_BOOL_FOLDER)
+     NOTMUCH_FEATURE_BOOL_FOLDER | NOTMUCH_FEATURE_LAST_MOD)
 
 /* Return the list of terms from the given iterator matching a prefix.
  * The prefix will be stripped from the strings in the returned list.

@@ -98,6 +98,9 @@ typedef struct {
  *
  *	SUBJECT:	The value of the "Subject" header
  *
+ *	LAST_MOD:	The revision number as of the last tag or
+ *			filename change.
+ *
  * In addition, terms from the content of the message are added with
  * "from", "to", "attachment", and "subject" prefixes for use by the
  * user in searching. Similarly, terms from the path of the mail
@@ -280,6 +283,7 @@ static const struct
      * reader can just refer to the message file. */
     {NOTMUCH_FEATURE_FROM_SUBJECT_ID_VALUES, "from/subject/message-ID in database", "w"},
     {NOTMUCH_FEATURE_BOOL_FOLDER,            "exact folder:/path: search", "rw"},
+    {NOTMUCH_FEATURE_LAST_MOD,               "modification tracking", "w"},
 };
 
 const char *
@@ -793,6 +797,7 @@ notmuch_database_open (const char *path,
     notmuch->atomic_nesting = 0;
     try {
 	string last_thread_id;
+	string last_mod;
 
 	if (mode == NOTMUCH_DATABASE_MODE_READ_WRITE) {
 	    notmuch->xapian_db = new Xapian::WritableDatabase (xapian_path,
@@ -850,6 +855,14 @@ notmuch_database_open (const char *path,
 	    if (*end != '\0')
 		INTERNAL_ERROR ("Malformed database last_thread_id: %s", str);
 	}
+
+	/* Get current highest revision number. */
+	last_mod = notmuch->xapian_db->get_value_upper_bound (
+	    NOTMUCH_VALUE_LAST_MOD);
+	if (last_mod.empty ())
+	    notmuch->revision = 0;
+	else
+	    notmuch->revision = Xapian::sortable_unserialise (last_mod);
 
 	notmuch->query_parser = new Xapian::QueryParser;
 	notmuch->term_gen = new Xapian::TermGenerator;
@@ -1238,7 +1251,8 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 
     /* Figure out how much total work we need to do. */
     if (new_features &
-	(NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_BOOL_FOLDER)) {
+	(NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_BOOL_FOLDER |
+	 NOTMUCH_FEATURE_LAST_MOD)) {
 	notmuch_query_t *query = notmuch_query_create (notmuch, "");
 	total += notmuch_query_count_messages (query);
 	notmuch_query_destroy (query);
@@ -1258,7 +1272,8 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 
     /* Perform per-message upgrades. */
     if (new_features &
-	(NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_BOOL_FOLDER)) {
+	(NOTMUCH_FEATURE_FILE_TERMS | NOTMUCH_FEATURE_BOOL_FOLDER |
+	 NOTMUCH_FEATURE_LAST_MOD)) {
 	notmuch_query_t *query = notmuch_query_create (notmuch, "");
 	notmuch_messages_t *messages;
 	notmuch_message_t *message;
@@ -1294,6 +1309,13 @@ notmuch_database_upgrade (notmuch_database_t *notmuch,
 	     */
 	    if (new_features & NOTMUCH_FEATURE_BOOL_FOLDER)
 		_notmuch_message_upgrade_folder (message);
+
+	    /* Prior to NOTMUCH_FEATURE_LAST_MOD, messages did not
+	     * track modification revisions.  Give all messages a
+	     * revision of 1.
+	     */
+	    if (new_features & NOTMUCH_FEATURE_LAST_MOD)
+		_notmuch_message_upgrade_last_mod (message);
 
 	    _notmuch_message_sync (message);
 
